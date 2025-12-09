@@ -646,7 +646,7 @@
                 <div class="radio-group">
                     <label>
                         <input type="radio" name="completionFilter" value="uncompleted" checked>
-                        Uncompleted Only
+                        Incomplete Only
                     </label>
                     <label>
                         <input type="radio" name="completionFilter" value="completed">
@@ -3200,6 +3200,10 @@
             }
 
             saveFilterState();
+            
+            // Display filter badges immediately so user sees them right away
+            displayFilterBadges();
+            
             closeFilterModal();
 
             // Check if we need to reload from API
@@ -3214,7 +3218,6 @@
             } else {
                 // Just parent filter changed - re-display existing data
                 displayTasks();
-                displayFilterBadges();
             }
         }
 
@@ -3227,8 +3230,8 @@
             // Only show completion chip if not showing all tasks
             if (filterState.completion !== 'both') {
                 const completionLabels = {
-                    'uncompleted': 'Uncompleted',
-                    'completed': 'Completed'
+                    'uncompleted': 'Incomplete Only',
+                    'completed': 'Completed Only'
                 };
                 chips.push({
                     label: completionLabels[filterState.completion],
