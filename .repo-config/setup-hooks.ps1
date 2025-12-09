@@ -52,10 +52,16 @@ elif [ "`$CURRENT_BRANCH" = "dev" ]; then
     # Dev: Restore dev-only files if deleted by merge
     for file in `$DEV_ONLY_FILES; do
         if ! git ls-files --error-unmatch "`$file" > /dev/null 2>&1; then
-            if git show dev@{1}:"`$file" > /dev/null 2>&1; then
-                echo "Restoring dev-only file: `$file"
-                git show dev@{1}:"`$file" > "`$file"
-                git add "`$file"
+            # Try to find the file in recent dev branch history
+            LAST_COMMIT=`$(git log --all --format=%H --diff-filter=D -- "`$file" | head -1)
+            if [ -n "`$LAST_COMMIT" ]; then
+                PARENT_COMMIT=`$(git rev-parse `$LAST_COMMIT^)
+                if git show `$PARENT_COMMIT:"`$file" > /dev/null 2>&1; then
+                    echo "Restoring dev-only file: `$file"
+                    mkdir -p "`$(dirname "`$file")"
+                    git show `$PARENT_COMMIT:"`$file" > "`$file"
+                    git add "`$file"
+                fi
             fi
         fi
     done
