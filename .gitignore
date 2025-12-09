@@ -1,1 +1,5 @@
-# Dev branch - includes documentation files
+# Main branch - excludes dev-only documentation files
+.github/CLAUDE.md
+.github/copilot-instructions.md
+.github/TASKRAPTOR_DOCUMENTATION.md
+.github/TODO.md
