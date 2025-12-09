@@ -26,13 +26,28 @@ CURRENT_BRANCH=`$(git branch --show-current)
 DEV_ONLY_FILES="$($devOnlyFiles -join ' ')"
 
 if [ "`$CURRENT_BRANCH" = "main" ]; then
-    # Main: Delete dev-only files from disk
+    # Main: Delete dev-only files from disk and ensure .gitignore blocks them
     for file in `$DEV_ONLY_FILES; do
         if [ -f "`$file" ]; then
             echo "Removing dev-only file from main: `$file"
             rm -f "`$file"
         fi
     done
+    
+    # Update .gitignore to ignore dev-only files on main
+    echo "# Main branch - excludes dev-only documentation files" > .gitignore
+    for file in `$DEV_ONLY_FILES; do
+        echo "`$file" >> .gitignore
+    done
+    
+    # Stage .gitignore changes
+    git add .gitignore
+    
+    # Auto-commit if there are changes
+    if ! git diff --cached --quiet 2>/dev/null; then
+        git commit --no-edit --no-verify -m "Auto-update .gitignore for main branch"
+    fi
+    
 elif [ "`$CURRENT_BRANCH" = "dev" ]; then
     # Dev: Restore dev-only files if deleted by merge
     for file in `$DEV_ONLY_FILES; do
@@ -45,9 +60,15 @@ elif [ "`$CURRENT_BRANCH" = "dev" ]; then
         fi
     done
     
-    # Auto-commit restored files
+    # Update .gitignore to allow dev-only files on dev
+    echo "# Dev branch - includes documentation files" > .gitignore
+    
+    # Stage .gitignore changes
+    git add .gitignore
+    
+    # Auto-commit restored files and .gitignore
     if ! git diff --cached --quiet 2>/dev/null; then
-        git commit --no-edit --no-verify -m "Auto-restore dev-only files"
+        git commit --no-edit --no-verify -m "Auto-restore dev-only files and update .gitignore"
     fi
 fi
 "@
