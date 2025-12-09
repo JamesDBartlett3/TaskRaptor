@@ -1539,6 +1539,13 @@
                 } else {
                     hideBackgroundLoadingBanner();
                 }
+            } finally {
+                // Ensure background loading flag is always cleared
+                if (background && window.backgroundLoadingInProgress) {
+                    window.backgroundLoadingInProgress = false;
+                    document.body.classList.remove('background-loading');
+                    hideGlobalUpdateSpinners();
+                }
             }
         }
 
