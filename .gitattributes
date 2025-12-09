@@ -1,0 +1,3 @@
+# Protect branch-specific config files
+.gitignore merge=ours
+.gitattributes merge=ours
