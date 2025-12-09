@@ -10,18 +10,18 @@ This document is designed for:
 ## Table of Contents
 
 1. [Application Overview](#application-overview)
-2. [Target Audience & Use Cases](#target-audience--use-cases)
-3. [Architecture & Design Philosophy](#architecture--design-philosophy)
-4. [Core Data Structures](#core-data-structures)
-5. [Application Lifecycle](#application-lifecycle)
-6. [Key Systems Explained](#key-systems-explained)
-7. [Function Reference](#function-reference)
-8. [State Management](#state-management)
-9. [API Integration Patterns](#api-integration-patterns)
-10. [Performance Optimizations](#performance-optimizations)
-11. [Known Limitations & Edge Cases](#known-limitations--edge-cases)
-12. [Development Guidelines](#development-guidelines)
-13. [Anti-Patterns to Avoid](#anti-patterns-to-avoid)
+1. [Target Audience & Use Cases](#target-audience--use-cases)
+1. [Architecture & Design Philosophy](#architecture--design-philosophy)
+1. [Core Data Structures](#core-data-structures)
+1. [Application Lifecycle](#application-lifecycle)
+1. [Key Systems Explained](#key-systems-explained)
+1. [Function Reference](#function-reference)
+1. [State Management](#state-management)
+1. [API Integration Patterns](#api-integration-patterns)
+1. [Performance Optimizations](#performance-optimizations)
+1. [Known Limitations & Edge Cases](#known-limitations--edge-cases)
+1. [Development Guidelines](#development-guidelines)
+1. [Anti-Patterns to Avoid](#anti-patterns-to-avoid)
 
 ---
 
