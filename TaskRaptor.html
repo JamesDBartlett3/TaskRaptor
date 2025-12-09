@@ -726,12 +726,26 @@
 
         // Save filter state to localStorage
         function saveFilterState() {
-            localStorage.setItem('taskraptor_filters', JSON.stringify(filterState));
+            try {
+                localStorage.setItem('taskraptor_filters', JSON.stringify(filterState));
+            } catch (error) {
+                console.error('Failed to save filter state:', error);
+                if (error.name === 'QuotaExceededError') {
+                    showToast('Storage full: Unable to save filter preferences', 'error');
+                }
+            }
         }
 
         // Expand state management
         function saveExpandStates() {
-            localStorage.setItem('taskraptor_expand_states', JSON.stringify(expandStates));
+            try {
+                localStorage.setItem('taskraptor_expand_states', JSON.stringify(expandStates));
+            } catch (error) {
+                console.error('Failed to save expand states:', error);
+                if (error.name === 'QuotaExceededError') {
+                    showToast('Storage full: Unable to save task expand states', 'error');
+                }
+            }
         }
 
         function loadExpandStates() {
@@ -743,7 +757,14 @@
 
         // PAT management
         function savePAT(token) {
-            localStorage.setItem('taskraptor_pat', token);
+            try {
+                localStorage.setItem('taskraptor_pat', token);
+            } catch (error) {
+                console.error('Failed to save PAT:', error);
+                if (error.name === 'QuotaExceededError') {
+                    showToast('Storage full: Unable to save access token. Clear browser data and try again.', 'error', 8000);
+                }
+            }
         }
 
         function loadPAT() {
@@ -756,7 +777,14 @@
 
         // Workspace management
         function saveWorkspaceId(workspaceId) {
-            localStorage.setItem('taskraptor_workspace_id', workspaceId);
+            try {
+                localStorage.setItem('taskraptor_workspace_id', workspaceId);
+            } catch (error) {
+                console.error('Failed to save workspace ID:', error);
+                if (error.name === 'QuotaExceededError') {
+                    showToast('Storage full: Unable to save workspace selection', 'error');
+                }
+            }
         }
 
         function loadWorkspaceId() {
@@ -773,7 +801,20 @@
                 timestamp: Date.now(),
                 data: data
             };
-            localStorage.setItem('taskraptor_cache', JSON.stringify(cacheData));
+            try {
+                localStorage.setItem('taskraptor_cache', JSON.stringify(cacheData));
+            } catch (error) {
+                console.error('Failed to save cache:', error);
+                if (error.name === 'QuotaExceededError') {
+                    showToast('Storage full: Cache not saved. Tasks will reload on next visit. Consider clearing old browser data.', 'error', 8000);
+                    // Optionally clear cache to free space
+                    try {
+                        localStorage.removeItem('taskraptor_cache');
+                    } catch (e) {
+                        console.error('Failed to clear cache:', e);
+                    }
+                }
+            }
         }
 
         function loadCache() {
