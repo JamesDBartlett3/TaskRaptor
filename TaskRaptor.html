@@ -2663,10 +2663,215 @@
             }
         }
 
+        function getIncompleteSubtasks(task) {
+            const incomplete = [];
+            if (!task || !task.subtasks || task.subtasks.length === 0) {
+                return incomplete;
+            }
+            
+            for (const subtask of task.subtasks) {
+                if (!subtask.completed) {
+                    incomplete.push(subtask);
+                }
+                // Recursively check subtask's subtasks
+                const childIncomplete = getIncompleteSubtasks(subtask);
+                incomplete.push(...childIncomplete);
+            }
+            
+            return incomplete;
+        }
+
+        function showSubtaskCompletionModal(taskGid, incompleteCount) {
+            const task = allTasksMap.get(taskGid);
+            const content = `
+                <p>This task has <strong>${incompleteCount} incomplete subtask${incompleteCount > 1 ? 's' : ''}</strong>.</p>
+                <p>Would you like to mark ${incompleteCount > 1 ? 'them' : 'it'} as complete as well?</p>
+            `;
+            const buttons = [
+                {
+                    text: 'Complete Task Only',
+                    onclick: `completeTaskOnly('${taskGid}')`
+                },
+                {
+                    text: 'Complete All',
+                    onclick: `completeTaskAndSubtasks('${taskGid}')`
+                }
+            ];
+            showGenericModal('Complete Task with Subtasks?', content, buttons);
+        }
+
+        async function completeTaskOnly(taskGid) {
+            closeGenericModal();
+            await markTaskComplete(taskGid, false);
+        }
+
+        async function completeTaskAndSubtasks(taskGid) {
+            closeGenericModal();
+            await markTaskComplete(taskGid, true);
+        }
+
+        async function markTaskComplete(taskGid, includeSubtasks) {
+            const task = allTasksMap.get(taskGid);
+            
+            try {
+                // Mark main task complete
+                const response = await fetch(`https://app.asana.com/api/1.0/tasks/${taskGid}`, {
+                    method: 'PUT',
+                    headers: {
+                        'Authorization': `Bearer ${personalAccessToken}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ data: { completed: true } })
+                });
+
+                if (!response.ok) throw new Error('Failed to update task');
+
+                task.completed = true;
+
+                // Update UI for main task
+                const taskElement = document.querySelector(`[data-task-id="${taskGid}"]`);
+                if (taskElement) {
+                    updateTaskCompletionUI(taskElement, task, true);
+                }
+
+                // Mark all subtasks complete if requested
+                let completedSubtaskCount = 0;
+                if (includeSubtasks) {
+                    const incompleteSubtasks = getIncompleteSubtasks(task);
+                    completedSubtaskCount = incompleteSubtasks.length;
+                    for (const subtask of incompleteSubtasks) {
+                        await markSubtaskComplete(subtask.gid);
+                    }
+                }
+
+                showToast(`Task${completedSubtaskCount > 0 ? ' and subtasks' : ''} marked as complete`, 'success', 2000);
+
+                // Update cache
+                saveCache({
+                    allTasksMap: Array.from(allTasksMap.entries()),
+                    rootItems: rootItems,
+                    allParents: Array.from(allParents)
+                });
+
+            } catch (error) {
+                // Revert checkbox on error
+                const taskElement = document.querySelector(`[data-task-id="${taskGid}"]`);
+                const checkbox = taskElement?.querySelector('.task-checkbox');
+                if (checkbox) checkbox.checked = false;
+                showToast('Failed to update task: ' + error.message, 'error');
+            }
+        }
+
+        async function markSubtaskComplete(subtaskGid) {
+            try {
+                const response = await fetch(`https://app.asana.com/api/1.0/tasks/${subtaskGid}`, {
+                    method: 'PUT',
+                    headers: {
+                        'Authorization': `Bearer ${personalAccessToken}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ data: { completed: true } })
+                });
+
+                if (!response.ok) throw new Error('Failed to update subtask');
+
+                const subtask = allTasksMap.get(subtaskGid);
+                if (subtask) {
+                    subtask.completed = true;
+                    
+                    // Update UI if subtask is visible
+                    const subtaskElement = document.querySelector(`[data-task-id="${subtaskGid}"]`);
+                    if (subtaskElement) {
+                        updateTaskCompletionUI(subtaskElement, subtask, true);
+                    }
+                }
+            } catch (error) {
+                console.error(`Failed to complete subtask ${subtaskGid}:`, error);
+            }
+        }
+
+        function updateTaskCompletionUI(taskElement, task, completed) {
+            const taskName = taskElement.querySelector('.task-name');
+            const dueDateButton = taskElement.querySelector('.due-date');
+            const checkbox = taskElement.querySelector('.task-checkbox');
+            
+            if (completed) {
+                taskElement.classList.add('completed');
+                if (taskName) taskName.classList.add('completed');
+                if (checkbox) checkbox.checked = true;
+                
+                // Remove overdue styling
+                if (dueDateButton) {
+                    dueDateButton.classList.remove('overdue');
+                }
+                
+                // Auto-collapse completed task
+                const detailsDiv = document.getElementById('details-' + task.gid);
+                const expandIcon = taskElement.querySelector('.expand-icon');
+                if (detailsDiv && detailsDiv.style.display !== 'none') {
+                    detailsDiv.style.display = 'none';
+                    if (expandIcon) expandIcon.textContent = '▶';
+                    expandStates[task.gid] = false;
+                    saveExpandStates();
+                }
+            } else {
+                taskElement.classList.remove('completed');
+                if (taskName) taskName.classList.remove('completed');
+                if (checkbox) checkbox.checked = false;
+                
+                // Re-check if task is overdue
+                if (dueDateButton && task.due_on) {
+                    const dueDate = new Date(task.due_on);
+                    const today = new Date();
+                    today.setHours(0, 0, 0, 0);
+                    if (dueDate < today) {
+                        dueDateButton.classList.add('overdue');
+                    }
+                }
+            }
+            
+            // Update parent non-tasks styling
+            let currentParent = task.parent;
+            while (currentParent) {
+                const parentTask = allTasksMap.get(currentParent.gid);
+                if (parentTask && (parentTask.isSection || parentTask.isProject || parentTask.isPlaceholder)) {
+                    const parentElement = document.querySelector(`[data-task-id="${currentParent.gid}"]`);
+                    if (parentElement) {
+                        const allDescendantsComplete = areAllDescendantsComplete(parentTask);
+                        const parentTaskName = parentElement.querySelector('.task-name');
+                        
+                        if (allDescendantsComplete) {
+                            parentElement.classList.add('completed');
+                            if (parentTaskName) parentTaskName.classList.add('completed');
+                        } else {
+                            parentElement.classList.remove('completed');
+                            if (parentTaskName) parentTaskName.classList.remove('completed');
+                        }
+                    }
+                }
+                currentParent = parentTask ? parentTask.parent : null;
+            }
+        }
+
         async function toggleTaskCompletion(event, taskGid) {
             event.stopPropagation();
             const checkbox = event.target;
             const completed = checkbox.checked;
+
+            // If marking complete and task has incomplete subtasks, prompt user
+            if (completed) {
+                const task = allTasksMap.get(taskGid);
+                const incompleteSubtasks = getIncompleteSubtasks(task);
+                
+                if (incompleteSubtasks.length > 0) {
+                    // Uncheck checkbox temporarily until user decides
+                    checkbox.checked = false;
+                    
+                    // Show modal asking if user wants to complete subtasks too
+                    showSubtaskCompletionModal(taskGid, incompleteSubtasks.length);
+                    return;
+                }
+            }
 
             try {
                 const response = await fetch(`https://app.asana.com/api/1.0/tasks/${taskGid}`, {
@@ -2684,61 +2889,7 @@
                 task.completed = completed;
 
                 const taskElement = checkbox.closest('.task-item');
-                const taskName = taskElement.querySelector('.task-name');
-                const dueDateButton = taskElement.querySelector('.due-date');
-                
-                if (completed) {
-                    taskElement.classList.add('completed');
-                    taskName.classList.add('completed');
-                    // Remove overdue styling when task is completed
-                    if (dueDateButton) {
-                        dueDateButton.classList.remove('overdue');
-                    }
-                    
-                    // Auto-collapse completed task to reduce visual clutter
-                    const detailsDiv = document.getElementById('details-' + taskGid);
-                    const expandIcon = taskElement.querySelector('.expand-icon');
-                    if (detailsDiv && detailsDiv.style.display !== 'none') {
-                        detailsDiv.style.display = 'none';
-                        if (expandIcon) expandIcon.textContent = '▶';
-                        expandStates[taskGid] = false;
-                        saveExpandStates();
-                    }
-                } else {
-                    taskElement.classList.remove('completed');
-                    taskName.classList.remove('completed');
-                    // Re-check if task is overdue when marking incomplete
-                    if (dueDateButton && task.due_on) {
-                        const dueDate = new Date(task.due_on);
-                        const today = new Date();
-                        today.setHours(0, 0, 0, 0);
-                        if (dueDate < today) {
-                            dueDateButton.classList.add('overdue');
-                        }
-                    }
-                }
-
-                // Update parent non-tasks styling based on their descendants' completion
-                let currentParent = task.parent;
-                while (currentParent) {
-                    const parentTask = allTasksMap.get(currentParent.gid);
-                    if (parentTask && (parentTask.isSection || parentTask.isProject || parentTask.isPlaceholder)) {
-                        const parentElement = document.querySelector(`[data-task-id="${currentParent.gid}"]`);
-                        if (parentElement) {
-                            const allDescendantsComplete = areAllDescendantsComplete(parentTask);
-                            const parentTaskName = parentElement.querySelector('.task-name');
-                            
-                            if (allDescendantsComplete) {
-                                parentElement.classList.add('completed');
-                                if (parentTaskName) parentTaskName.classList.add('completed');
-                            } else {
-                                parentElement.classList.remove('completed');
-                                if (parentTaskName) parentTaskName.classList.remove('completed');
-                            }
-                        }
-                    }
-                    currentParent = parentTask ? parentTask.parent : null;
-                }
+                updateTaskCompletionUI(taskElement, task, completed);
 
                 showToast(`Task marked as ${completed ? 'complete' : 'incomplete'}`, 'success', 2000);
 
@@ -3112,8 +3263,10 @@
             let buttonsHtml = '';
             if (buttons.length > 0) {
                 buttonsHtml = '<div class="modal-footer">';
-                buttons.forEach(btn => {
-                    buttonsHtml += `<button onclick="${btn.onclick}">${btn.text}</button>`;
+                buttons.forEach((btn, index) => {
+                    const btnClass = btn.class || (index === buttons.length - 1 ? 'btn-edit' : 'btn-secondary');
+                    const btnStyle = btnClass === 'btn-edit' ? 'opacity: 1; pointer-events: auto;' : '';
+                    buttonsHtml += `<button class="${btnClass}" onclick="${btn.onclick}" style="${btnStyle}">${btn.text}</button>`;
                 });
                 buttonsHtml += '</div>';
             } else {
