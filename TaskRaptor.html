@@ -692,7 +692,7 @@
     </div>
 
     <script>
-        const WORKSPACE_ID = '219640683144922';
+        let WORKSPACE_ID = null;
         let personalAccessToken = '';
         let currentUserId = '';
         let allTasksMap = new Map();
@@ -752,6 +752,19 @@
 
         function clearPAT() {
             localStorage.removeItem('taskraptor_pat');
+        }
+
+        // Workspace management
+        function saveWorkspaceId(workspaceId) {
+            localStorage.setItem('taskraptor_workspace_id', workspaceId);
+        }
+
+        function loadWorkspaceId() {
+            return localStorage.getItem('taskraptor_workspace_id');
+        }
+
+        function clearWorkspaceId() {
+            localStorage.removeItem('taskraptor_workspace_id');
         }
 
         // Cache management
@@ -984,6 +997,14 @@
                 const data = await response.json();
                 currentUserId = data.data.gid;
 
+                // Try to load saved workspace ID
+                WORKSPACE_ID = loadWorkspaceId();
+                
+                // If no saved workspace, fetch and let user select
+                if (!WORKSPACE_ID) {
+                    await selectWorkspace();
+                }
+
                 document.getElementById('authSection').style.display = 'none';
                 document.getElementById('mainSection').style.display = 'block';
 
@@ -1003,7 +1024,75 @@
             } catch (error) {
                 showToast('Authentication failed: ' + error.message, 'error');
                 clearPAT();
+                clearWorkspaceId();
             }
+        }
+
+        async function selectWorkspace() {
+            try {
+                const response = await fetch('https://app.asana.com/api/1.0/workspaces', {
+                    headers: {
+                        'Authorization': `Bearer ${personalAccessToken}`
+                    }
+                });
+
+                if (!response.ok) {
+                    throw new Error('Failed to fetch workspaces');
+                }
+
+                const data = await response.json();
+                const workspaces = data.data;
+
+                if (workspaces.length === 0) {
+                    throw new Error('No workspaces found');
+                }
+
+                if (workspaces.length === 1) {
+                    // Only one workspace, use it automatically
+                    WORKSPACE_ID = workspaces[0].gid;
+                    saveWorkspaceId(WORKSPACE_ID);
+                } else {
+                    // Multiple workspaces, show selector
+                    await showWorkspaceSelector(workspaces);
+                }
+
+            } catch (error) {
+                throw new Error('Workspace selection failed: ' + error.message);
+            }
+        }
+
+        async function showWorkspaceSelector(workspaces) {
+            return new Promise((resolve) => {
+                const modal = document.createElement('div');
+                modal.className = 'modal';
+                modal.style.display = 'flex';
+                
+                const modalContent = document.createElement('div');
+                modalContent.className = 'modal-content';
+                modalContent.style.maxWidth = '500px';
+                
+                modalContent.innerHTML = `
+                    <h2 style="margin-bottom: 20px;">Select Workspace</h2>
+                    <p style="margin-bottom: 20px; color: #666;">Choose which Asana workspace to use with TaskRaptor:</p>
+                    <select id="workspaceSelect" style="width: 100%; padding: 10px; margin-bottom: 20px; border: 2px solid #ddd; border-radius: 6px; font-size: 1em;">
+                        ${workspaces.map(ws => `<option value="${ws.gid}">${ws.name}</option>`).join('')}
+                    </select>
+                    <div style="display: flex; gap: 10px; justify-content: flex-end;">
+                        <button id="workspaceConfirm" class="btn" style="padding: 10px 20px; background: #667eea; color: white; border: none; border-radius: 6px; cursor: pointer;">Continue</button>
+                    </div>
+                `;
+                
+                modal.appendChild(modalContent);
+                document.body.appendChild(modal);
+                
+                document.getElementById('workspaceConfirm').onclick = () => {
+                    const selectedWorkspaceId = document.getElementById('workspaceSelect').value;
+                    WORKSPACE_ID = selectedWorkspaceId;
+                    saveWorkspaceId(selectedWorkspaceId);
+                    document.body.removeChild(modal);
+                    resolve();
+                };
+            });
         }
 
         function displayCachedData() {
@@ -3186,6 +3275,7 @@
         function logout() {
             if (confirm('Are you sure you want to logout? This will clear your cached data.')) {
                 clearPAT();
+                clearWorkspaceId();
                 clearCache();
                 location.reload();
             }
@@ -3208,8 +3298,10 @@
         window.onload = function() {
             loadExpandStates();
             const savedToken = loadPAT();
+            const savedWorkspaceId = loadWorkspaceId();
             if (savedToken) {
                 personalAccessToken = savedToken;
+                WORKSPACE_ID = savedWorkspaceId; // May be null, will be fetched during auth if needed
                 authenticateAndLoad();
             }
         };

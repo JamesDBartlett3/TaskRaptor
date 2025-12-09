@@ -53,7 +53,7 @@ taskraptor.html (single file containing)
 // Global variables
 let personalAccessToken = '';      // Asana PAT for authentication
 let currentUserId = '';            // Authenticated user's Asana GID
-let workspaceId = '219640683144922'; // Target workspace (hardcoded)
+let workspaceId = null; // Target workspace (fetched from API and stored in localStorage)
 let allTasksMap = new Map();       // Map of GID -> Task object (all tasks + subtasks)
 let rootItems = [];                // Array of root-level tasks to display
 let allParents = new Set();        // Set of JSON strings for parent filter dropdown
@@ -735,7 +735,7 @@ Root items = 201 | After filters = 18
 
 ### Known Limitations
 - **PAT required**: Users must have Asana PAT
-- **Single workspace**: Hardcoded workspace ID
+- **Single or multiple workspaces**: Workspace ID fetched from API and stored in localStorage
 - **No real-time sync**: Must refresh to see changes from Asana
 - **No offline editing**: Requires internet for API calls
 - **Limited custom fields**: Only shows basic task properties
@@ -762,7 +762,7 @@ These are the minimal fields needed for the app to function.
 ## Workspace Configuration
 
 ### Current Workspace
-- **Workspace ID**: `219640683144922`
+- **Workspace ID**: Dynamically fetched from Asana API
 - **Workspace Name**: (varies by user)
 - **Location**: Hardcoded in `loadUserTasks()` function
 
@@ -930,7 +930,7 @@ Full transcript available at: `/mnt/transcripts/2025-12-04-21-31-02-asana-task-v
 
 ### Essential Variables
 ```javascript
-workspaceId = '219640683144922'
+WORKSPACE_ID = null // Fetched during authentication
 filterState.completion = 'uncompleted' | 'completed' | 'both'
 filterState.dateRange = 'last7' | 'last30' | 'last90' | 'custom' | 'all'
 ```

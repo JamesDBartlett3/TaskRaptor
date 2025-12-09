@@ -160,9 +160,7 @@ let expandStates = {...};        // UI state persistence
 // Authentication & User Context
 let personalAccessToken = '';    // Asana PAT - stored in localStorage
 let currentUserId = '';          // Authenticated user's Asana GID
-
-// Hardcoded Workspace (TODO: Make configurable)
-const WORKSPACE_ID = '219640683144922';
+let WORKSPACE_ID = null;         // Workspace GID - fetched from API and stored in localStorage
 
 // Core Data Store
 let allTasksMap = new Map();     // Map<string, Task> - GID → Task object
@@ -1208,9 +1206,7 @@ The application uses **global mutable state** (not React/Redux style). All state
 - `personalAccessToken` - Only change during login/logout
 - `currentUserId` - Only set during authentication
 - `cachedData` - Only set once on page load
-
-**❌ Never Mutate:**
-- `WORKSPACE_ID` - Hardcoded constant (TODO: make configurable)
+- `WORKSPACE_ID` - Only set during authentication/workspace selection
 
 ### State Synchronization
 
@@ -1646,19 +1642,7 @@ After:
 
 ## Known Limitations & Edge Cases
 
-### 1. Hardcoded Workspace ID
-
-> **📝 TODO**: Workspace ID will become configurable via UI selector or first-launch prompt, stored in localStorage
-
-**Current State**: `const WORKSPACE_ID = '219640683144922';`
-
-**Limitation**: App only works for one workspace
-
-**Workaround**: Edit file and replace workspace ID
-
-**TODO**: Add workspace selector to UI (see TODO.md)
-
-### 2. localStorage Size Limit
+### 1. localStorage Size Limit
 
 **Limitation**: Browsers limit localStorage to ~10MB
 

@@ -35,7 +35,7 @@
 - [ ] Optimize API calls by checking for existing data in memory before making network requests, to reduce redundant data fetching and improve load times. Example: Subtask needs to build parent chain - check if parent is already in allTasksMap before making API call.
 
 ## Configuration
-- [ ] Make workspace ID configurable instead of hardcoded (currently `219640683144922`). Add workspace selector to UI or prompt on first launch, store in localStorage. Research whether it's possible to get the user's workspace from the PAT.
+- [x] ~~Make workspace ID configurable instead of hardcoded. Add workspace selector to UI or prompt on first launch, store in localStorage.~~ **COMPLETED**: Workspace ID is now fetched from Asana API during authentication. If user has multiple workspaces, a selector modal is shown. Workspace ID is stored in localStorage alongside PAT.
 
 ## Code Refactoring
 - [ ] Refactor modal system to use generic modal functions consistently. Currently `showInfoModal` uses `showGenericModal` properly, but `showFilterModal` and `closeFilterModal` are hardcoded to specific DOM elements. All modals should use the generic modal system to improve maintainability and reduce code duplication.
