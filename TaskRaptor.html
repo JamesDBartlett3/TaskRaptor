@@ -2694,6 +2694,16 @@
                     if (dueDateButton) {
                         dueDateButton.classList.remove('overdue');
                     }
+                    
+                    // Auto-collapse completed task to reduce visual clutter
+                    const detailsDiv = document.getElementById('details-' + taskGid);
+                    const expandIcon = taskElement.querySelector('.expand-icon');
+                    if (detailsDiv && detailsDiv.style.display !== 'none') {
+                        detailsDiv.style.display = 'none';
+                        if (expandIcon) expandIcon.textContent = '▶';
+                        expandStates[taskGid] = false;
+                        saveExpandStates();
+                    }
                 } else {
                     taskElement.classList.remove('completed');
                     taskName.classList.remove('completed');
