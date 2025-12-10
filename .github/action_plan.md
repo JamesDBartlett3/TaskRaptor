@@ -6,9 +6,9 @@ Based on impact, user value, and dependencies, here's the recommended prioritiza
 
 ---
 
-## **🔴 CRITICAL PRIORITY (Fix First)**
+## **🔴 CRITICAL PRIORITY (Fix First)** ✅ **100% COMPLETE**
 
-### **1. Race Condition: Background Loading Flag** (Potential Bug #1)
+### ~~**1. Race Condition: Background Loading Flag**~~ ✅ **COMPLETED** (Potential Bug #1)
 - **Why**: Causes persistent loading spinners, breaks app functionality
 - **Impact**: High - directly affects UX
 - **Effort**: Low - simple try/finally fix
@@ -16,8 +16,9 @@ Based on impact, user value, and dependencies, here's the recommended prioritiza
 - **Location**: `displayCachedData` and `loadUserTasks`
 - **Issue**: `window.backgroundLoadingInProgress` flag not always cleared
 - **Fix**: Add try/finally to ensure flag cleared
+- **✅ Completed**: Added try/finally blocks to ensure background loading flag is always cleared.
 
-### **2. localStorage Quota Exceeded Not Handled** (Potential Bug #4)
+### ~~**2. localStorage Quota Exceeded Not Handled**~~ ✅ **COMPLETED** (Potential Bug #4)
 - **Why**: Silent failure means users lose data without knowing
 - **Impact**: High - data loss
 - **Effort**: Low - add try/catch blocks
@@ -25,8 +26,9 @@ Based on impact, user value, and dependencies, here's the recommended prioritiza
 - **Location**: All `localStorage.setItem` calls
 - **Issue**: No try/catch for quota exceeded errors
 - **Fix**: Wrap in try/catch, show toast warning user
+- **✅ Completed**: Added error handling for localStorage operations with user-facing toast notifications.
 
-### **3. Memory Leak: Editor References** (Potential Bug #2)
+### ~~**3. Memory Leak: Editor References**~~ ✅ **COMPLETED** (Potential Bug #2)
 - **Why**: Grows over time, eventually slows app
 - **Impact**: Medium - performance degrades
 - **Effort**: Low - cleanup on collapse
@@ -34,32 +36,36 @@ Based on impact, user value, and dependencies, here's the recommended prioritiza
 - **Location**: Multiple editor creation points
 - **Issue**: `commentEditors` Map grows but entries never removed
 - **Fix**: Clean up editors when tasks collapsed or navigated away
+- **✅ Completed**: Implemented proper cleanup of editor references to prevent memory leaks.
 
 ---
 
 ## **🟡 HIGH PRIORITY (User-Facing Improvements)**
 
-### **4. Task Completion Modal for Subtasks** (Tasks > Task Completion)
+### ~~**4. Task Completion Modal for Subtasks**~~ ✅ **COMPLETED** (Tasks > Task Completion)
 - **Why**: Prevents accidental incomplete subtasks
 - **Impact**: High - workflow improvement
 - **Effort**: Medium - modal + logic
 - **Risk**: Low
 - **TODO Item**: If the task has incomplete subtasks, open a modal to prompt the user if they'd like to also mark all subtasks as complete
+- **✅ Completed**: Implemented modal using showGenericModal() with "Mark Complete" and "Cancel" buttons. Modal prompts user when completing task with incomplete subtasks.
 
-### **5. Auto-collapse Completed Tasks** (Tasks > Task Completion)
+### ~~**5. Auto-collapse Completed Tasks**~~ ✅ **COMPLETED** (Tasks > Task Completion)
 - **Why**: Reduces visual clutter immediately
 - **Impact**: Medium - better UX
 - **Effort**: Low - one line of code
 - **Risk**: Low
 - **Dependency**: Works well with #4
 - **TODO Item**: Automatically collapse the completed task to reduce visual clutter
+- **✅ Completed**: Added automatic collapse functionality in toggleTaskCompletion() when task is marked complete.
 
-### **6. Rename Filter Labels** (Toolbar)
+### ~~**6. Rename Filter Labels**~~ ✅ **COMPLETED** (Toolbar)
 - **Why**: "Incomplete Only" is clearer than "Uncompleted"
 - **Impact**: Low - but easy win
 - **Effort**: Very Low - string replacement
 - **Risk**: None
 - **TODO Item**: Rename "Uncompleted" to "Incomplete Only" and "Completed" to "Completed Only" for clarity
+- **✅ Completed**: Updated filter labels throughout the UI for better clarity.
 
 ---
 
@@ -80,19 +86,21 @@ Based on impact, user value, and dependencies, here's the recommended prioritiza
 - **Dependency**: Should do after #7
 - **TODO Item**: Load highest hierarchy level tasks first and render them immediately, then progressively load and render subtasks in the background to improve perceived performance and allow users to start interacting with the task list sooner.
 
-### **9. Notes/Comments 3-Line Limit** (Text Entry Fields)
+### ~~**9. Notes/Comments 3-Line Limit**~~ ✅ **COMPLETED** (Text Entry Fields)
 - **Why**: Cleaner UI, less scrolling
 - **Impact**: Medium - UX improvement
 - **Effort**: Medium - expand/collapse logic
 - **Risk**: Low
 - **TODO Item**: Limit initial display of Notes and Comments to 3 lines of text with a "Show More" option. Clicking "Show More" expands to show the full content. When expanded, provide a "Show Less" option to collapse back to 3 lines.
+- **✅ Completed**: Implemented with CSS max-height: 4.8em (3 lines), gradient fade (3.2em), stripHtmlStyling() utility function to preserve links/lists while removing inline styles, box-sizing: content-box for proper padding handling.
 
-### **10. Fix Filter Chip Bug** (Toolbar)
+### ~~**10. Fix Filter Chip Bug**~~ ✅ **COMPLETED** (Toolbar)
 - **Why**: UI feels broken when chips don't update
 - **Impact**: Medium - polish
 - **Effort**: Low - debugging + fix
 - **Risk**: Low
 - **TODO Item**: Fix bug where changing filter criteria does not immediately update the chips display
+- **✅ Completed**: Fixed filter badge display to update immediately when filter criteria change.
 
 ---
 
@@ -134,23 +142,33 @@ Based on impact, user value, and dependencies, here's the recommended prioritiza
 
 ## **Recommended Implementation Phases**
 
-### **Phase 1: Quick Wins (1-2 hours)**
+### **Phase 1: Quick Wins (1-2 hours)** ✅ **100% COMPLETE**
 1. ✅ Fix background loading flag race condition
 2. ✅ Add localStorage quota error handling
 3. ✅ Fix memory leak in editor references
 4. ✅ Rename filter labels ("Incomplete Only")
 5. ✅ Auto-collapse completed tasks
+6. ✅ Make workspace ID configurable (fetch from Asana API and store in localStorage)
 
 **Benefits**: Immediate stability improvements and UX polish with minimal risk
+**Status**: All items completed and tested
 
 ---
 
-### **Phase 2: User Experience (2-4 hours)**
+### **Phase 2: User Experience (2-4 hours)** ✅ **100% COMPLETE**
 6. ✅ Task completion modal for subtasks
 7. ✅ Fix filter chip display bug
-8. ✅ Notes/Comments 3-line limit with expand
+8. ✅ Notes/Comments 3-line limit with expand (stripHtmlStyling utility, gradient fade, proper overflow detection)
+9. ✅ Fix bullet point indentation (Text Entry Fields)
+10. ✅ Move Edit button to top-right corner (Text Entry Fields)
+11. ✅ Reorder task header buttons for improved usability (Mark all complete leftmost, Due Date rightmost)
+12. ✅ Enhanced notes display with improved edit button positioning and styling
 
 **Benefits**: Noticeable UX improvements that users will appreciate
+**Status**: All planned items completed plus bonus features:
+- ✅ Bug fix: Non-task parent cascade styling (areAllDescendantsComplete logic)
+- ✅ New feature: "Mark all complete" button for non-task parents with incomplete descendants
+- ✅ Enhanced expandable sections with overflow detection and improved styling
 
 ---
 
@@ -170,9 +188,9 @@ Based on impact, user value, and dependencies, here's the recommended prioritiza
 - [ ] Replace logout confirmation dialog with modal
 - [ ] Make toolbar floating/docked when scrolling
 
-### **Text Entry Fields (Not Yet Prioritized)**
-- [ ] Fix bullet point indentation bug
-- [ ] Move "Edit" button to top-right corner
+### **Text Entry Fields**
+- [x] ~~Fix bullet point indentation bug~~ ✅ **COMPLETED**: Added CSS rules for ul/ol padding-left: 30px and li margin: 5px 0
+- [x] ~~Move "Edit" button to top-right corner~~ ✅ **COMPLETED**: Repositioned Edit button for Notes (not Comments) using position: absolute with top: 10px, right: 10px, and added padding-top: 40px to notes content
 
 ### **Tasks (Not Yet Prioritized)**
 - [ ] Move breadcrumb trail below title text
@@ -185,8 +203,11 @@ Based on impact, user value, and dependencies, here's the recommended prioritiza
 - [ ] Research Asana API capabilities for batch fetching
 - [ ] Optimize API calls by checking memory before network requests
 
+### **Configuration**
+- [x] ~~Make workspace ID configurable~~ ✅ **COMPLETED**: Fetch from Asana API and store in localStorage (commit d908581)
+
 ### **Code Quality (Not Yet Prioritized)**
-- [ ] Refactor modal system for consistency
+- [x] ~~Refactor modal system for consistency~~ ✅ **COMPLETED**: showGenericModal() now used for task completion prompts and mark all complete confirmation
 - [ ] Remove dead code (unused functions, CSS, variables)
 - [ ] Fix potential bugs (infinite loops, state inconsistencies, XSS risks)
 - [ ] Add type definitions (JSDoc)

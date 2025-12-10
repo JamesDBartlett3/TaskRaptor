@@ -1,17 +1,17 @@
 # TaskRaptor ODO List
 
 ## Toolbar
-- [ ] Rename "Uncompleted" to "Incomplete Only" and "Completed" to "Completed Only" for clarity
-- [ ] Fix bug where changing filter criteria does not immediately update the chips display
+- [x] ~~Rename "Uncompleted" to "Incomplete Only" and "Completed" to "Completed Only" for clarity~~ **COMPLETED**: Filter labels updated throughout the UI for better clarity.
+- [x] ~~Fix bug where changing filter criteria does not immediately update the chips display~~ **COMPLETED**: Filter badges now update immediately when criteria change.
 - [ ] Persist "Sort by" selection across sessions using the same method as other user preferences
 - [ ] When user deletes a filter chip, add an "Apply Filter Changes" button to confirm the action before updating the task list, to prevent accidental deletions and allow multiple changes before applying
 - [ ] Replace logout confirmation dialog with a modal that includes "Cancel" and "Logout" buttons for better user experience
 - [ ] Make toolbar floating and docked to the top of the viewport when scrolling through long task lists, to keep filter and sort options easily accessible. When scrolling down, the toolbar should minimize to a compact version showing only icons, and expand back to full view when scrolling up. Add a subtle shadow effect to the floating toolbar to distinguish it from the content below.
 
 ## Text Entry Fields
-- [ ] Limit initial display of Notes and Comments to 3 lines of text with a "Show More" option. Clicking "Show More" expands to show the full content. When expanded, provide a "Show Less" option to collapse back to 3 lines. The initial display should show the plain text version of the content (task.notes), and the expanded view should show the full rich text (task.html_notes).
-- [ ] Fix bug where bullet points are displayed outside of the box on the left side in Notes and Comments fields due to incorrect indentation handling
-- [ ] Move "Edit" button for Notes and Comments to the top-right corner of the text box for cleaner UI and screenspace optimization
+- [x] ~~Limit initial display of Notes and Comments to 3 lines of text with a "Show More" option. Clicking "Show More" expands to show the full content. When expanded, provide a "Show Less" option to collapse back to 3 lines. The initial display should show the plain text version of the content (task.notes), and the expanded view should show the full rich text (task.html_notes).~~ **COMPLETED**: Notes and Comments now collapse to 3 lines with gradient fade and "Show More/Less" functionality. Uses stripHtmlStyling() to preserve links in collapsed state.
+- [x] ~~Fix bug where bullet points are displayed outside of the box on the left side in Notes and Comments fields due to incorrect indentation handling~~ **COMPLETED**: Added proper CSS styling for ul/ol/li elements with padding-left: 30px and consistent margins.
+- [x] ~~Move "Edit" button for Notes and Comments to the top-right corner of the text box for cleaner UI and screenspace optimization~~ **COMPLETED**: Edit button for Notes moved to top-right corner of the notes text box with absolute positioning.
 
 ## Tasks
 
@@ -20,8 +20,8 @@
 - [ ] Extend clickable area of title bar to include breadcrumb trail
 
 ### Task Completion
-- [ ] If the task has incomplete subtasks, open a modal to prompt the user if they'd like to also mark all subtasks as complete
-- [ ] Automatically collapse the completed task to reduce visual clutter
+- [x] ~~If the task has incomplete subtasks, open a modal to prompt the user if they'd like to also mark all subtasks as complete~~ **COMPLETED**: Modal prompts when marking task complete if it has incomplete subtasks, with option to mark all subtasks complete.
+- [x] ~~Automatically collapse the completed task to reduce visual clutter~~ **COMPLETED**: Tasks auto-collapse when marked complete.
 
 ### General Task Features
 - [ ] Add a "Copy Link" button to each task for easy sharing
@@ -38,7 +38,7 @@
 - [x] ~~Make workspace ID configurable instead of hardcoded. Add workspace selector to UI or prompt on first launch, store in localStorage.~~ **COMPLETED**: Workspace ID is now fetched from Asana API during authentication. If user has multiple workspaces, a selector modal is shown. Workspace ID is stored in localStorage alongside PAT.
 
 ## Code Refactoring
-- [ ] Refactor modal system to use generic modal functions consistently. Currently `showInfoModal` uses `showGenericModal` properly, but `showFilterModal` and `closeFilterModal` are hardcoded to specific DOM elements. All modals should use the generic modal system to improve maintainability and reduce code duplication.
+- [x] ~~Refactor modal system to use generic modal functions consistently. Currently `showInfoModal` uses `showGenericModal` properly, but `showFilterModal` and `closeFilterModal` are hardcoded to specific DOM elements. All modals should use the generic modal system to improve maintainability and reduce code duplication.~~ **COMPLETED**: showGenericModal() now used for task completion prompts and mark all complete confirmation.
 
 ## Stretch Goal Features
 - [ ] "Minimap" feature for quick navigation through long task lists
