@@ -400,11 +400,16 @@
         .notes-content a:hover {
             text-decoration: underline;
         }
+        .notes-content,
+        .comment-content {
+            line-height: 1.6;
+        }
         .notes-content.collapsed,
         .comment-content.collapsed {
             max-height: 4.8em; /* 3 lines × 1.6 line-height */
             overflow: hidden;
             position: relative;
+            box-sizing: content-box; /* Make max-height only apply to content, not padding */
         }
         .notes-content.collapsed::after,
         .comment-content.collapsed::after {
@@ -413,7 +418,7 @@
             bottom: 0;
             left: 0;
             right: 0;
-            height: 2.4em;
+            height: 3.2em;
             background: linear-gradient(to bottom, 
                 rgba(255,255,255,0) 0%, 
                 rgba(255,255,255,0.3) 25%,
@@ -421,6 +426,10 @@
                 rgba(255,255,255,0.85) 75%,
                 rgba(255,255,255,1) 100%);
             pointer-events: none;
+        }
+        .notes-content.no-gradient::after,
+        .comment-content.no-gradient::after {
+            display: none;
         }
         .show-more-btn {
             color: #667eea;
@@ -2402,10 +2411,8 @@
                     richTextContent = plainTextContent;
                 }
                 
-                // Initialize expansion state if not set
-                if (task.notesExpanded === undefined) {
-                    task.notesExpanded = false;
-                }
+                // Always start collapsed (expansion state is not persisted)
+                task.notesExpanded = false;
                 
                 contentHtml += `
                     <div class="notes-container" style="padding-left: 5px;">
@@ -2413,7 +2420,7 @@
                             <strong>Notes:</strong>
                             <button class="btn-edit" onclick="editTaskNotes(event, '${task.gid}')">Edit</button>
                         </div>
-                        <div id="notes-${task.gid}" class="notes-content ${task.notesExpanded ? '' : 'collapsed'}" style="margin-top: 5px; padding: 10px; background: white; border-radius: 4px; line-height: 1.6; ${task.notesExpanded ? '' : 'white-space: pre-line;'} margin-bottom: 0;">${task.notesExpanded ? richTextContent : plainTextContent}</div>
+                        <div id="notes-${task.gid}" class="notes-content ${task.notesExpanded ? '' : 'collapsed'}" style="margin-top: 5px; padding: 10px; background: white; border-radius: 4px; ${task.notesExpanded ? '' : 'white-space: pre-line;'} margin-bottom: 0;">${task.notesExpanded ? richTextContent : plainTextContent}</div>
                         <button class="show-more-btn" onclick="toggleNotesExpansion(event, '${task.gid}')" style="display: none;">${task.notesExpanded ? 'Show Less' : 'Show More'}</button>
                     </div>
                 `;
@@ -2456,10 +2463,8 @@
                     // Rich text for expanded view
                     const richCommentText = comment.html_text || plainCommentText;
                     
-                    // Initialize expansion state if not set
-                    if (comment.expanded === undefined) {
-                        comment.expanded = false;
-                    }
+                    // Always start collapsed (expansion state is not persisted)
+                    comment.expanded = false;
                     
                     // Only show edit/delete buttons if current user created the comment
                     const isOwnComment = comment.created_by.gid === currentUserId;
@@ -2479,7 +2484,7 @@
                                 </div>
                                 ${actionButtons}
                             </div>
-                            <div id="comment-content-${comment.gid}" class="comment-content ${comment.expanded ? '' : 'collapsed'}">${comment.expanded ? richCommentText : plainCommentText}</div>
+                            <div id="comment-content-${comment.gid}" class="comment-content ${comment.expanded ? '' : 'collapsed'}" style="background: #f8f9fa; border-radius: 4px; margin-top: 5px; padding: 10px;">${comment.expanded ? richCommentText : plainCommentText}</div>
                             <button class="show-more-btn" onclick="toggleCommentExpansion(event, '${taskGid}', '${comment.gid}')" style="display: none;">${comment.expanded ? 'Show Less' : 'Show More'}</button>
                             <div id="comment-edit-${comment.gid}" style="display: none;"></div>
                         </div>
@@ -2531,14 +2536,18 @@
                 // Find the associated show more button (next sibling)
                 const showMoreBtn = element.nextElementSibling;
                 
-                // Only show button if content actually overflows by more than 1.6em (1 line)
+                // Determine if content actually overflows
+                const hasOverflow = actualHeight > maxHeight + 25;
+                
+                // Show/hide button based on overflow
                 if (showMoreBtn && showMoreBtn.classList.contains('show-more-btn')) {
-                    if (actualHeight > maxHeight + 16) { // 16px ≈ 1em extra threshold
+                    if (hasOverflow) {
                         showMoreBtn.style.display = 'inline-block';
+                        element.classList.add('collapsed'); // Ensure collapsed class is present
                     } else {
                         showMoreBtn.style.display = 'none';
-                        // Remove gradient if not actually truncated
-                        element.classList.remove('collapsed');
+                        // Add a class to hide gradient but keep line-height
+                        element.classList.add('no-gradient');
                     }
                 }
             });
@@ -2587,32 +2596,19 @@
             event.preventDefault();
             event.stopPropagation();
             
-            console.log('toggleCommentExpansion called', { taskGid, commentGid, backgroundLoading: window.backgroundLoadingInProgress });
-            
             const task = allTasksMap.get(taskGid);
-            if (!task || !task.comments) {
-                console.log('No task or comments found');
-                return;
-            }
+            if (!task || !task.comments) return;
             
             // Find the comment and toggle its expanded state
             const comment = task.comments.find(c => c.gid === commentGid);
-            if (!comment) {
-                console.log('Comment not found');
-                return;
-            }
+            if (!comment) return;
             
             comment.expanded = !comment.expanded;
             
             const commentDiv = document.getElementById(`comment-content-${commentGid}`);
             const button = event.target;
             
-            if (!commentDiv) {
-                console.log('Comment div not found');
-                return;
-            }
-            
-            console.log('Toggling comment', { expanded: comment.expanded });
+            if (!commentDiv) return;
             
             if (comment.expanded) {
                 // Expand: show rich text
