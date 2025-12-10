@@ -2202,11 +2202,11 @@
                         <span class="background-update-spinner"></span>
                     </div>
                     <div class="task-header-buttons">
-                        ${isNonTask && !allSubtasksComplete ? '<button class="btn-action btn-mark-all-complete" onclick="markAllDescendantsComplete(event, \''+task.gid+'\')" title="Mark all descendants complete">✓ Mark all complete</button>' : ''}
                         <button class="btn-action due-date ${dueDateClass}" onclick="setDueDate(event, '${task.gid}')" style="${dueDateStyle}" title="Set Due Date">${dueDateDisplay}</button>
-                        <button class="btn-action" onclick="createSubtask(event, '${task.gid}')" title="Add Subtask">➕ Subtask</button>
-                        <button class="btn-action rename" onclick="renameTask(event, '${task.gid}')" title="Rename">✏️ Rename</button>
                         ${!hasNotes && !task.isProject && !task.isSection && !task.isPlaceholder ? '<button class="btn-action" onclick="editTaskNotes(event, \''+task.gid+'\')" title="Add Notes">📝 Notes</button>' : ''}
+                        <button class="btn-action rename" onclick="renameTask(event, '${task.gid}')" title="Rename">✏️ Rename</button>
+                        <button class="btn-action" onclick="createSubtask(event, '${task.gid}')" title="Add Subtask">➕ Subtask</button>
+                        ${isNonTask && !allSubtasksComplete ? '<button class="btn-action btn-mark-all-complete" onclick="markAllDescendantsComplete(event, \''+task.gid+'\')" title="Mark all descendants complete">✓ Mark all complete</button>' : ''}
                     </div>
                 </div>
                 <div id="details-${task.gid}" class="task-details" style="display: ${isExpanded ? 'block' : 'none'};">
