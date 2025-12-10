@@ -400,6 +400,30 @@
         .notes-content a:hover {
             text-decoration: underline;
         }
+        /* Fix bullet point indentation */
+        .notes-content ul,
+        .notes-content ol,
+        .comment-content ul,
+        .comment-content ol {
+            margin: 0 0 10px 0;
+            padding-left: 30px;
+        }
+        .notes-content ul:first-child,
+        .notes-content ol:first-child,
+        .comment-content ul:first-child,
+        .comment-content ol:first-child {
+            margin-top: 0;
+        }
+        .notes-content ul:last-child,
+        .notes-content ol:last-child,
+        .comment-content ul:last-child,
+        .comment-content ol:last-child {
+            margin-bottom: 0;
+        }
+        .notes-content li,
+        .comment-content li {
+            margin: 5px 0;
+        }
         .notes-content,
         .comment-content {
             line-height: 1.6;
@@ -2398,9 +2422,6 @@
 
             // Notes section
             if ((task.notes && task.notes.trim().length > 0) || (task.html_notes && task.html_notes.trim().length > 0)) {
-                // Initially show plain text (collapsed to 3 lines)
-                const plainTextContent = linkifyHTML(task.notes || '');
-                
                 // Full rich text for expanded view
                 let richTextContent;
                 if (task.html_notes) {
@@ -2408,8 +2429,11 @@
                     const doc = parser.parseFromString(task.html_notes, 'text/html');
                     richTextContent = doc.body.innerHTML;
                 } else {
-                    richTextContent = plainTextContent;
+                    richTextContent = linkifyHTML(task.notes || '');
                 }
+                
+                // Stripped HTML for collapsed view (preserves links, lists, but removes styling)
+                const collapsedContent = task.html_notes ? stripHtmlStyling(task.html_notes) : linkifyHTML(task.notes || '');
                 
                 // Always start collapsed (expansion state is not persisted)
                 task.notesExpanded = false;
@@ -2420,7 +2444,7 @@
                             <strong>Notes:</strong>
                             <button class="btn-edit" onclick="editTaskNotes(event, '${task.gid}')">Edit</button>
                         </div>
-                        <div id="notes-${task.gid}" class="notes-content ${task.notesExpanded ? '' : 'collapsed'}" style="margin-top: 5px; padding: 10px; background: white; border-radius: 4px; ${task.notesExpanded ? '' : 'white-space: pre-line;'} margin-bottom: 0;">${task.notesExpanded ? richTextContent : plainTextContent}</div>
+                        <div id="notes-${task.gid}" class="notes-content ${task.notesExpanded ? '' : 'collapsed'}" style="margin-top: 5px; padding: 10px; background: white; border-radius: 4px; margin-bottom: 0;">${task.notesExpanded ? richTextContent : collapsedContent}</div>
                         <button class="show-more-btn" onclick="toggleNotesExpansion(event, '${task.gid}')" style="display: none;">${task.notesExpanded ? 'Show Less' : 'Show More'}</button>
                     </div>
                 `;
@@ -2458,10 +2482,10 @@
                 
                 // Display comments in chronological order
                 commentsToDisplay.forEach(comment => {
-                    // Plain text for collapsed view
-                    const plainCommentText = linkifyHTML(comment.text);
                     // Rich text for expanded view
-                    const richCommentText = comment.html_text || plainCommentText;
+                    const richCommentText = comment.html_text || linkifyHTML(comment.text);
+                    // Stripped HTML for collapsed view (preserves links, lists, but removes styling)
+                    const collapsedCommentText = comment.html_text ? stripHtmlStyling(comment.html_text) : linkifyHTML(comment.text);
                     
                     // Always start collapsed (expansion state is not persisted)
                     comment.expanded = false;
@@ -2484,7 +2508,7 @@
                                 </div>
                                 ${actionButtons}
                             </div>
-                            <div id="comment-content-${comment.gid}" class="comment-content ${comment.expanded ? '' : 'collapsed'}" style="background: #f8f9fa; border-radius: 4px; margin-top: 5px; padding: 10px;">${comment.expanded ? richCommentText : plainCommentText}</div>
+                            <div id="comment-content-${comment.gid}" class="comment-content ${comment.expanded ? '' : 'collapsed'}" style="background: #f8f9fa; border-radius: 4px; margin-top: 5px; padding: 10px;">${comment.expanded ? richCommentText : collapsedCommentText}</div>
                             <button class="show-more-btn" onclick="toggleCommentExpansion(event, '${taskGid}', '${comment.gid}')" style="display: none;">${comment.expanded ? 'Show Less' : 'Show More'}</button>
                             <div id="comment-edit-${comment.gid}" style="display: none;"></div>
                         </div>
@@ -2580,14 +2604,12 @@
                     richTextContent = linkifyHTML(task.notes || '');
                 }
                 notesDiv.innerHTML = richTextContent;
-                notesDiv.style.whiteSpace = '';
                 button.textContent = 'Show Less';
             } else {
-                // Collapse: show plain text
+                // Collapse: show stripped HTML (preserves links, removes styling)
                 notesDiv.classList.add('collapsed');
-                const plainTextContent = linkifyHTML(task.notes || '');
-                notesDiv.innerHTML = plainTextContent;
-                notesDiv.style.whiteSpace = 'pre-line';
+                const collapsedContent = task.html_notes ? stripHtmlStyling(task.html_notes) : linkifyHTML(task.notes || '');
+                notesDiv.innerHTML = collapsedContent;
                 button.textContent = 'Show More';
             }
         }
@@ -2617,10 +2639,10 @@
                 commentDiv.innerHTML = richCommentText;
                 button.textContent = 'Show Less';
             } else {
-                // Collapse: show plain text
+                // Collapse: show stripped HTML (preserves links, removes styling)
                 commentDiv.classList.add('collapsed');
-                const plainCommentText = linkifyHTML(comment.text);
-                commentDiv.innerHTML = plainCommentText;
+                const collapsedCommentText = comment.html_text ? stripHtmlStyling(comment.html_text) : linkifyHTML(comment.text);
+                commentDiv.innerHTML = collapsedCommentText;
                 button.textContent = 'Show More';
             }
         }
@@ -3701,6 +3723,33 @@
         function linkifyHTML(html) {
             const urlRegex = /(https?:\/\/[^\s<]+)/g;
             return html.replace(urlRegex, '<a href="$1" target="_blank" style="color: #667eea; text-decoration: underline;">$1</a>');
+        }
+
+        function stripHtmlStyling(html) {
+            if (!html) return '';
+            
+            const parser = new DOMParser();
+            const doc = parser.parseFromString(html, 'text/html');
+            
+            // Remove all style attributes and certain formatting tags
+            const elementsWithStyle = doc.querySelectorAll('[style]');
+            elementsWithStyle.forEach(el => el.removeAttribute('style'));
+            
+            // Remove span, font, and other pure styling tags but keep their content
+            const stylingTags = doc.querySelectorAll('span, font, div');
+            stylingTags.forEach(el => {
+                // Replace the element with its content
+                const parent = el.parentNode;
+                while (el.firstChild) {
+                    parent.insertBefore(el.firstChild, el);
+                }
+                parent.removeChild(el);
+            });
+            
+            // Keep semantic tags: a, ul, ol, li, p, strong, em, b, i, br
+            // Everything else gets stripped but content preserved
+            
+            return doc.body.innerHTML;
         }
 
         function logout() {
