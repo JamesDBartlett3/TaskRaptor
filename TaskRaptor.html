@@ -1287,7 +1287,7 @@
             rootItems = newRootItems;
         }
 
-        function createMissingParentItems() {
+        async function createMissingParentItems() {
             const referencedParents = new Set();
             const existingGids = new Set();
             
@@ -1297,21 +1297,72 @@
                 if (task.parent && task.parent.gid) {
                     referencedParents.add(task.parent.gid);
                 }
+                // Debug: Check for "Unknown Parent" names
+                if (task.name && task.name.includes('Unknown')) {
+                    console.log(`Found task with Unknown in name: "${task.name}" (GID: ${task.gid})`);
+                }
             });
             
             console.log(`Found ${existingGids.size} existing tasks and ${referencedParents.size} referenced parents`);
             
+            // Fix any tasks that exist with "Unknown Parent" name but have better names in references
+            referencedParents.forEach(parentGid => {
+                if (existingGids.has(parentGid)) {
+                    const parentTask = allTasksMap.get(parentGid);
+                    
+                    // If the existing task has "Unknown Parent" as its name, try to update it
+                    if (parentTask.name === 'Unknown Parent' || !parentTask.name) {
+                        // Look for any task that references this parent and use its parent.name
+                        allTasksMap.forEach(task => {
+                            if (task.parent && task.parent.gid === parentGid && task.parent.name) {
+                                console.log(`Updating "${parentTask.name}" (${parentGid}) to "${task.parent.name}" from reference`);
+                                parentTask.name = task.parent.name;
+                            }
+                        });
+                    }
+                    
+                    // Also try to add project hierarchy if this parent has no parent but its children have memberships
+                    if (!parentTask.parent) {
+                        console.log(`Checking children of "${parentTask.name}" (${parentGid}) for membership info...`);
+                        allTasksMap.forEach(childTask => {
+                            if (childTask.parent && childTask.parent.gid === parentGid) {
+                                console.log(`  Child "${childTask.name}" has memberships:`, childTask.memberships);
+                                if (childTask.memberships && childTask.memberships.length > 0) {
+                                    const membership = childTask.memberships[0];
+                                    console.log(`    Section GID: ${membership.section?.gid}, Parent GID: ${parentGid}, Match: ${membership.section?.gid === parentGid}`);
+                                    console.log(`    Project: ${membership.project?.name} (${membership.project?.gid})`);
+                                    
+                                    // If the parent matches a section, link it to the project
+                                    if (membership.section && membership.section.gid === parentGid && membership.project) {
+                                        parentTask.parent = {
+                                            gid: membership.project.gid,
+                                            name: membership.project.name
+                                        };
+                                        parentTask.isSection = true;
+                                        console.log(`✓ Linked "${parentTask.name}" to project "${membership.project.name}"`);
+                                    }
+                                }
+                            }
+                        });
+                    }
+                }
+            });
+            
             // Second pass: create placeholder items for missing parents
             const tasksToProcess = Array.from(allTasksMap.values());
-            tasksToProcess.forEach(task => {
+            for (const task of tasksToProcess) {
                 // If task has a parent that doesn't exist as a task, create it
                 if (task.parent && task.parent.gid && !existingGids.has(task.parent.gid)) {
+                    console.log(`Creating missing parent for task "${task.name}": parent GID=${task.parent.gid}, parent name="${task.parent.name}"`);
+                    
                     // Check memberships to get proper name and hierarchy
                     if (task.memberships && task.memberships.length > 0) {
                         const membership = task.memberships[0];
+                        console.log(`  Has memberships: section=${membership.section?.gid}, project=${membership.project?.gid}`);
                         
                         // Check if this is a section
                         if (membership.section && membership.section.gid === task.parent.gid) {
+                            console.log(`  Parent IS the section: ${membership.section.name}`);
                             const sectionItem = {
                                 gid: membership.section.gid,
                                 name: membership.section.name,
@@ -1347,12 +1398,54 @@
                                 existingGids.add(projectItem.gid);
                                 console.log(`Created project item: ${projectItem.name}`);
                             }
+                        } else {
+                            // Parent exists but is not the section - create as regular parent task placeholder
+                            let parentName = task.parent.name;
+                            
+                            console.log(`Non-section parent for task "${task.name}": GID=${task.parent.gid}, name="${parentName}"`);
+                            
+                            // If no parent name, try to fetch from API
+                            if (!parentName) {
+                                try {
+                                    const parentTask = await getTaskDetails(task.parent.gid);
+                                    if (parentTask) {
+                                        parentName = parentTask.name;
+                                    }
+                                } catch (error) {
+                                    console.warn(`Could not fetch parent details for ${task.parent.gid}:`, error);
+                                }
+                            }
+                            
+                            const placeholderItem = {
+                                gid: task.parent.gid,
+                                name: parentName || 'Unknown Parent (No Access)',
+                                completed: false,
+                                isPlaceholder: true,
+                                subtasks: [],
+                                parent: null
+                            };
+                            allTasksMap.set(placeholderItem.gid, placeholderItem);
+                            existingGids.add(placeholderItem.gid);
                         }
                     } else {
-                        // No memberships data, create a basic placeholder
+                        // No memberships data or parent not in memberships
+                        // Try to fetch parent details from API if name is missing
+                        let parentName = task.parent.name;
+                        
+                        if (!parentName) {
+                            try {
+                                const parentTask = await getTaskDetails(task.parent.gid);
+                                if (parentTask) {
+                                    parentName = parentTask.name;
+                                }
+                            } catch (error) {
+                                console.warn(`Could not fetch parent details for ${task.parent.gid}:`, error);
+                            }
+                        }
+                        
                         const placeholderItem = {
                             gid: task.parent.gid,
-                            name: task.parent.name || 'Unknown Parent',
+                            name: parentName || 'Unknown Parent (No Access)',
                             completed: false,
                             isPlaceholder: true,
                             subtasks: [],
@@ -1360,7 +1453,7 @@
                         };
                         allTasksMap.set(placeholderItem.gid, placeholderItem);
                         existingGids.add(placeholderItem.gid);
-                        console.log(`Created placeholder item: ${placeholderItem.name}`);
+                        console.log(`Created placeholder item: ${placeholderItem.name} (GID: ${placeholderItem.gid})`);
                     }
                 } else if (!task.parent && task.memberships && task.memberships.length > 0) {
                     // Task has no parent but has memberships - create project/section hierarchy
@@ -1414,13 +1507,14 @@
                         console.log(`Linked task "${task.name}" to project "${membership.project.name}"`);
                     }
                 }
-            });
+            }
             
             console.log(`After creating missing parents: ${allTasksMap.size} total items`);
         }
 
         // Fetch all tasks with pagination
         async function loadUserTasks(background = false) {
+            console.log('🚀 loadUserTasks STARTING - Code version: 2025-12-09-v2');
             try {
                 if (!background) showProgress();
                 
@@ -1434,7 +1528,7 @@
 
                 // Build API URL with filters
                 // Include memberships to get project/section hierarchy
-                let apiUrl = `https://app.asana.com/api/1.0/tasks?assignee=${currentUserId}&workspace=${WORKSPACE_ID}&opt_fields=name,completed,assignee,due_on,modified_at,parent,notes,html_notes,memberships,memberships.project,memberships.project.name,memberships.section,memberships.section.name`;
+                let apiUrl = `https://app.asana.com/api/1.0/tasks?assignee=${currentUserId}&workspace=${WORKSPACE_ID}&opt_fields=name,completed,assignee,due_on,modified_at,parent,parent.name,notes,html_notes,memberships,memberships.project,memberships.project.name,memberships.section,memberships.section.name`;
                 
                 // Add API-level filters based on completion status and date range
                 const dateFilter = getDateFilter();
@@ -1522,7 +1616,7 @@
                 }
 
                 // Create placeholder items for missing parents (projects/sections)
-                createMissingParentItems();
+                await createMissingParentItems();
 
                 // Load subtasks for all filtered tasks - this will add more tasks to allTasksMap
                 setProgress(40, 'Loading subtasks...');
@@ -1637,6 +1731,130 @@
                     });
                     console.log(`After deduplication: ${rootItems.length} root items`);
                 }
+                
+                // Fetch missing ancestors for each root item
+                setProgress(91, 'Checking for missing ancestors...');
+                console.log(`Checking ${rootItems.length} root items for missing ancestors...`);
+                
+                for (let i = 0; i < rootItems.length; i++) {
+                    const root = rootItems[i];
+                    
+                    // Debug: Log each root's parent status
+                    console.log(`Root #${i + 1}: "${root.name}" (${root.gid})`);
+                    console.log(`  Has parent field: ${root.parent ? 'yes' : 'no'}`);
+                    
+                    // If root has no parent field at all, try fetching it directly to see if Asana has parent info
+                    if (!root.parent && !root.isProject && !root.isSection) {
+                        console.log(`  Root has no parent field, fetching directly from API...`);
+                        try {
+                            const fetchedRoot = await fetch(`https://app.asana.com/api/1.0/tasks/${root.gid}?opt_fields=parent,parent.name,memberships,memberships.project,memberships.project.name,memberships.section,memberships.section.name`, {
+                                headers: { 'Authorization': `Bearer ${personalAccessToken}` }
+                            });
+                            
+                            if (fetchedRoot.ok) {
+                                const data = await fetchedRoot.json();
+                                if (data.data.parent) {
+                                    console.log(`  ✓ Found parent via API: "${data.data.parent.name}" (${data.data.parent.gid})`);
+                                    root.parent = data.data.parent;
+                                } else {
+                                    console.log(`  No parent field, checking memberships...`);
+                                    // Update root's memberships if we got them
+                                    if (data.data.memberships) {
+                                        root.memberships = data.data.memberships;
+                                        console.log(`  Updated memberships:`, data.data.memberships);
+                                        
+                                        // If task belongs to a section, create parent link to that section
+                                        if (data.data.memberships.length > 0 && data.data.memberships[0].section) {
+                                            const section = data.data.memberships[0].section;
+                                            console.log(`  ✓ Task belongs to section: "${section.name}" (${section.gid})`);
+                                            
+                                            // Check if section exists in map, if not create it
+                                            if (!allTasksMap.has(section.gid)) {
+                                                const project = data.data.memberships[0].project;
+                                                const sectionItem = {
+                                                    gid: section.gid,
+                                                    name: section.name,
+                                                    completed: false,
+                                                    isSection: true,
+                                                    subtasks: [],
+                                                    parent: project ? {gid: project.gid, name: project.name} : null
+                                                };
+                                                allTasksMap.set(section.gid, sectionItem);
+                                                console.log(`  Created section placeholder: "${section.name}"`);
+                                                
+                                                // Create project if needed
+                                                if (project && !allTasksMap.has(project.gid)) {
+                                                    const projectItem = {
+                                                        gid: project.gid,
+                                                        name: project.name,
+                                                        completed: false,
+                                                        isProject: true,
+                                                        subtasks: [],
+                                                        parent: null
+                                                    };
+                                                    allTasksMap.set(project.gid, projectItem);
+                                                    console.log(`  Created project placeholder: "${project.name}"`);
+                                                }
+                                            }
+                                            
+                                            // Link root to section
+                                            root.parent = {gid: section.gid, name: section.name};
+                                        }
+                                    }
+                                }
+                            }
+                        } catch (error) {
+                            console.warn(`  Could not fetch root details:`, error);
+                        }
+                    }
+                    
+                    if (root.parent) {
+                        console.log(`  Parent: "${root.parent.name}" (${root.parent.gid})`);
+                        console.log(`  Parent exists in map: ${allTasksMap.has(root.parent.gid)}`);
+                    }
+                    
+                    // Check if this root has a parent that's not in the map
+                    if (root.parent && root.parent.gid && !allTasksMap.has(root.parent.gid)) {
+                        console.log(`Root "${root.name}" has missing parent: ${root.parent.name} (${root.parent.gid})`);
+                        
+                        // Fetch the entire ancestor chain
+                        await fetchMissingAncestors(root.parent.gid);
+                        
+                        // After fetching, find the new true root
+                        const parentChain = await getParentChain(root.gid);
+                        const newRoot = parentChain.length > 0 ? parentChain[0] : root;
+                        
+                        if (newRoot.gid !== root.gid) {
+                            console.log(`  Replacing root "${root.name}" with "${newRoot.name}"`);
+                            rootItems[i] = newRoot;
+                            rootGids.delete(root.gid);
+                            rootGids.add(newRoot.gid);
+                            
+                            // Update parent filter options
+                            allParents.add(JSON.stringify({
+                                gid: newRoot.gid,
+                                name: newRoot.name
+                            }));
+                        }
+                    }
+                    
+                    if ((i + 1) % 3 === 0 || i === rootItems.length - 1) {
+                        const ancestorProgress = 91 + ((i + 1) / rootItems.length) * 3;
+                        setProgress(ancestorProgress, `Checking ancestors: ${i + 1}/${rootItems.length}`);
+                    }
+                }
+                
+                // Remove any duplicate roots that may have been created
+                const finalUniqueGids = new Set();
+                rootItems = rootItems.filter(root => {
+                    if (finalUniqueGids.has(root.gid)) {
+                        return false;
+                    }
+                    finalUniqueGids.add(root.gid);
+                    return true;
+                });
+                
+                console.log(`After ancestor fetch: ${rootItems.length} root items`);
                 
                 // Collapse single-child chains into breadcrumbs
                 collapseSingleChildChains();
@@ -1765,6 +1983,67 @@
             });
         }
 
+        async function fetchMissingAncestors(parentGid) {
+            // Fetch all missing ancestors starting from a parent GID (parent, grandparent, etc.)
+            if (!parentGid) return;
+            
+            let currentParentGid = parentGid;
+            
+            while (currentParentGid) {
+                // Check if parent already exists AND has parent info
+                if (allTasksMap.has(currentParentGid)) {
+                    const parent = allTasksMap.get(currentParentGid);
+                    
+                    // If parent exists but parent.parent is undefined (not null, but undefined),
+                    // it means parent info wasn't fetched. Re-fetch it.
+                    if (parent.parent === undefined) {
+                        console.log(`Parent "${parent.name}" exists but lacks parent info, re-fetching...`);
+                        try {
+                            const refreshedTask = await fetch(`https://app.asana.com/api/1.0/tasks/${currentParentGid}?opt_fields=name,completed,assignee,due_on,modified_at,parent,parent.name,notes,html_notes`, {
+                                headers: { 'Authorization': `Bearer ${personalAccessToken}` }
+                            });
+                            
+                            if (refreshedTask.ok) {
+                                const data = await refreshedTask.json();
+                                const taskData = data.data;
+                                // Update the parent field while preserving other data
+                                parent.parent = taskData.parent;
+                                console.log(`Updated parent info for "${parent.name}": ${parent.parent ? parent.parent.name : 'no parent (root)'}`);
+                            }
+                        } catch (error) {
+                            console.warn(`Could not refresh parent info for ${currentParentGid}:`, error);
+                        }
+                    }
+                    
+                    // Now continue up the chain
+                    currentParentGid = parent.parent ? parent.parent.gid : null;
+                    continue;
+                }
+                
+                // Parent doesn't exist, fetch it
+                try {
+                    const parentTask = await getTaskDetails(currentParentGid);
+                    if (parentTask) {
+                        // Initialize required fields
+                        parentTask.subtasks = parentTask.subtasks || [];
+                        parentTask.comments = null;
+                        parentTask.subtasksLoaded = false;
+                        
+                        allTasksMap.set(parentTask.gid, parentTask);
+                        console.log(`Fetched missing ancestor: "${parentTask.name}" (${parentTask.gid})`);
+                        
+                        // Continue up the chain
+                        currentParentGid = parentTask.parent ? parentTask.parent.gid : null;
+                    } else {
+                        break;
+                    }
+                } catch (error) {
+                    console.warn(`Could not fetch ancestor ${currentParentGid}:`, error);
+                    break;
+                }
+            }
+        }
+
         async function getParentChain(taskGid) {
             const chain = [];
             let currentTask = allTasksMap.get(taskGid);
@@ -1796,7 +2075,7 @@
             }
 
             try {
-                const response = await fetch(`https://app.asana.com/api/1.0/tasks/${taskGid}?opt_fields=name,completed,assignee,due_on,modified_at,parent,notes,html_notes`, {
+                const response = await fetch(`https://app.asana.com/api/1.0/tasks/${taskGid}?opt_fields=name,completed,assignee,due_on,modified_at,parent,parent.name,notes,html_notes`, {
                     headers: { 'Authorization': `Bearer ${personalAccessToken}` }
                 });
 
@@ -1841,7 +2120,7 @@
             }
 
             try {
-                const response = await fetch(`https://app.asana.com/api/1.0/tasks/${taskGid}/subtasks?opt_fields=name,completed,assignee,due_on,modified_at,parent,notes,html_notes`, {
+                const response = await fetch(`https://app.asana.com/api/1.0/tasks/${taskGid}/subtasks?opt_fields=name,completed,assignee,due_on,modified_at,parent,parent.name,notes,html_notes,memberships,memberships.project,memberships.project.name,memberships.section,memberships.section.name`, {
                     headers: { 'Authorization': `Bearer ${personalAccessToken}` }
                 });
 
