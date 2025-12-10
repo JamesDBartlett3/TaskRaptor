@@ -29,7 +29,7 @@
             background: white;
             border-radius: 12px;
             box-shadow: 0 10px 40px rgba(0,0,0,0.1);
-            overflow: hidden;
+            overflow: visible;
         }
         .header {
             background: linear-gradient(135deg, #2c7873 0%, #1a4f4a 100%);
@@ -38,6 +38,7 @@
             display: flex;
             align-items: center;
             gap: 20px;
+            border-radius: 12px 12px 0 0;
         }
         .header-logo {
             width: 120px;
@@ -84,13 +85,50 @@
             background: #d35400;
         }
         .controls {
-            padding: 20px 30px;
+            padding: 20px 30px 20px 15px;
             background: #f8f9fa;
             border-bottom: 1px solid #dee2e6;
             display: grid;
             grid-template-columns: 1fr auto;
             gap: 20px;
             align-items: start;
+            position: sticky;
+            top: -1px;
+            z-index: 1000;
+            transition: none;
+            box-shadow: 0 2px 4px rgba(0,0,0,0);
+            will-change: padding, box-shadow;
+        }
+        .controls.compact {
+            padding: 10px 30px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+        }
+        .controls.compact button .btn-text {
+            display: none;
+        }
+        .controls.compact button,
+        .controls.compact select {
+            padding: 6px 10px;
+            font-size: 0.85em;
+        }
+        .controls.compact .filter-chip {
+            padding: 4px 8px;
+            font-size: 0.8em;
+        }
+        .controls-logo {
+            height: 40px;
+            width: 40px;
+            padding: 5px 3px;
+            border-radius: 8px;
+            width: 0;
+            opacity: 0;
+            overflow: hidden;
+            transition: width 0.3s ease, opacity 0.3s ease, margin-right 0.3s ease;
+        }
+        /* Show logo when compact */
+        .controls.compact .controls-logo {
+            width: 40px;
+            opacity: 1;
         }
         .controls-left {
             display: flex;
@@ -118,6 +156,13 @@
             background: white;
             cursor: pointer;
             font-size: 0.95em;
+            transition: all 0.2s ease;
+        }
+        .controls button .btn-text {
+            display: inline;
+        }
+        .controls.compact button .btn-text {
+            display: none;
         }
         .controls button:hover {
             background: #f8f9fa;
@@ -691,19 +736,20 @@
         <div id="mainSection" style="display: none;">
             <div class="controls">
                 <div class="controls-left">
-                    <button onclick="showInfoModal()">ℹ️ Info</button>
+                    <img src="TaskRaptor.png" alt="TaskRaptor" class="controls-logo">
+                    <button onclick="showInfoModal()" title="Info"><span class="btn-icon">ℹ️</span><span class="btn-text"> Info</span></button>
                     <select id="sortSelect" onchange="applySorting()">
                         <option value="name">Sort by Name</option>
                         <option value="due_date">Sort by Due Date</option>
                         <option value="completed">Sort by Status</option>
                         <option value="modified">Sort by Last Modified</option>
                     </select>
-                    <button onclick="showFilterModal()">🔍 Filters</button>
+                    <button onclick="showFilterModal()" title="Filters"><span class="btn-icon">🔍</span><span class="btn-text"> Filters</span></button>
                     <div id="filterBadges"></div>
                 </div>
                 <div class="controls-right">
-                    <button onclick="refreshData()">🔄 Refresh</button>
-                    <button onclick="logout()">🚪 Logout</button>
+                    <button onclick="refreshData()" title="Refresh"><span class="btn-icon">🔄</span><span class="btn-text"> Refresh</span></button>
+                    <button onclick="logout()" title="Logout"><span class="btn-icon">🚪</span><span class="btn-text"> Logout</span></button>
                 </div>
             </div>
 
@@ -947,9 +993,20 @@
                 <span class="toast-close">×</span>
             `;
             
-            // Position toast in stack
+            // Position toast in stack, accounting for sticky toolbar
+            const controls = document.querySelector('.controls');
+            const scrollTop = window.pageYOffset || document.documentElement.scrollTop;
+            
+            // Calculate base top position based on toolbar state
+            let baseTop = 20;
+            if (controls && scrollTop > 10) {
+                // Toolbar is sticky at top
+                const toolbarHeight = controls.offsetHeight;
+                baseTop = toolbarHeight + 10; // Toolbar height + gap
+            }
+            
             const existingToasts = document.querySelectorAll('.toast:not(.hiding)');
-            let topPosition = 20;
+            let topPosition = baseTop;
             existingToasts.forEach(t => {
                 topPosition += t.offsetHeight + 10;
             });
@@ -985,8 +1042,19 @@
         }
         
         function repositionToasts() {
+            const controls = document.querySelector('.controls');
+            const scrollTop = window.pageYOffset || document.documentElement.scrollTop;
+            
+            // Calculate base top position based on toolbar state
+            let baseTop = 20;
+            if (controls && scrollTop > 10) {
+                // Toolbar is sticky at top
+                const toolbarHeight = controls.offsetHeight;
+                baseTop = toolbarHeight + 10; // Toolbar height + gap
+            }
+            
             const toasts = document.querySelectorAll('.toast:not(.hiding)');
-            let topPosition = 20;
+            let topPosition = baseTop;
             toasts.forEach(toast => {
                 toast.style.top = topPosition + 'px';
                 topPosition += toast.offsetHeight + 10;
@@ -4217,6 +4285,55 @@
                 closeFilterModal();
             }
         };
+
+        // Toolbar scroll behavior
+        let lastScrollTop = 0;
+        let scrollTimeout = null;
+        let isCompact = false;
+        let isTransitioning = false; // Prevent changes during CSS transitions
+        const SCROLL_THRESHOLD = 20; // Minimum scroll distance to trigger state change
+        const HEADER_HEIGHT = 200; // Approximate height of header banner
+        
+        function handleToolbarScroll() {
+            const controls = document.querySelector('.controls');
+            if (!controls || isTransitioning) return;
+            
+            const scrollTop = window.pageYOffset || document.documentElement.scrollTop;
+            
+            // Calculate scroll difference
+            const scrollDiff = scrollTop - lastScrollTop;
+            const scrollDiffAbs = Math.abs(scrollDiff);
+            
+            // Ignore very small scroll changes
+            if (scrollDiffAbs < 1) return;
+            
+            // Compact activates at 150px, but only deactivates when back above header (200px)
+            const shouldBeCompact = scrollTop > 150 && (isCompact || scrollTop <= HEADER_HEIGHT ? scrollTop > HEADER_HEIGHT : true);
+            
+            // Handle compact state
+            if (shouldBeCompact !== isCompact && scrollDiffAbs >= SCROLL_THRESHOLD) {
+                isCompact = shouldBeCompact;
+                isTransitioning = true;
+                if (isCompact) {
+                    controls.classList.add('compact');
+                } else {
+                    controls.classList.remove('compact');
+                }
+                // Allow transitions to complete
+                setTimeout(() => { isTransitioning = false; }, 350);
+                lastScrollTop = scrollTop;
+            } else if (scrollDiffAbs > SCROLL_THRESHOLD) {
+                lastScrollTop = scrollTop;
+            }
+        }
+        
+        // Throttle scroll events more aggressively
+        window.addEventListener('scroll', function() {
+            if (scrollTimeout) {
+                clearTimeout(scrollTimeout);
+            }
+            scrollTimeout = setTimeout(handleToolbarScroll, 150);
+        }, { passive: true });
 
         window.onload = function() {
             loadExpandStates();
