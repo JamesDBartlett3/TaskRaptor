@@ -2440,11 +2440,11 @@
                 
                 contentHtml += `
                     <div class="notes-container" style="padding-left: 5px;">
-                        <div style="display: flex; justify-content: space-between; align-items: center;">
-                            <strong>Notes:</strong>
-                            <button class="btn-edit" onclick="editTaskNotes(event, '${task.gid}')">Edit</button>
+                        <strong>Notes:</strong>
+                        <div style="position: relative; margin-top: 5px;">
+                            <button class="btn-edit" onclick="editTaskNotes(event, '${task.gid}')" style="position: absolute; top: 10px; right: 10px; z-index: 10;">Edit</button>
+                            <div id="notes-${task.gid}" class="notes-content ${task.notesExpanded ? '' : 'collapsed'}" style="padding: 10px; padding-top: 40px; background: white; border-radius: 4px; margin-bottom: 0;">${task.notesExpanded ? richTextContent : collapsedContent}</div>
                         </div>
-                        <div id="notes-${task.gid}" class="notes-content ${task.notesExpanded ? '' : 'collapsed'}" style="margin-top: 5px; padding: 10px; background: white; border-radius: 4px; margin-bottom: 0;">${task.notesExpanded ? richTextContent : collapsedContent}</div>
                         <button class="show-more-btn" onclick="toggleNotesExpansion(event, '${task.gid}')" style="display: none;">${task.notesExpanded ? 'Show Less' : 'Show More'}</button>
                     </div>
                 `;
