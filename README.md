@@ -10,8 +10,8 @@ User-centric Asana task viewer using Personal Access Token authentication. Singl
 - Single HTML file, no backend or build process needed.
 
 ## Installation
-1. Download the `taskraptor.html` file from the repository.
-2. Open the file in your web browser.
+1. Right-click this link and select "Save Link As...": [`TaskRaptor.html`](https://github.com/JamesDBartlett3/TaskRaptor/raw/main/TaskRaptor.html)
+2. Open the downloaded file in your web browser.
 3. Enter your Asana Personal Access Token to start managing your tasks.
 4. Customize settings as needed for your workflow.
 
