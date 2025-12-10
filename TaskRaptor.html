@@ -18,7 +18,7 @@
         }
         body {
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: linear-gradient(135deg, #2c7873 0%, #1a4f4a 100%);
             min-height: 100vh;
             padding: 20px;
             min-width: 550px;
@@ -32,9 +32,21 @@
             overflow: hidden;
         }
         .header {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: linear-gradient(135deg, #2c7873 0%, #1a4f4a 100%);
             color: white;
             padding: 30px;
+            display: flex;
+            align-items: center;
+            gap: 20px;
+        }
+        .header-logo {
+            width: 120px;
+            height: 120px;
+            border-radius: 6px;
+            flex-shrink: 0;
+        }
+        .header-content {
+            flex: 1;
             text-align: center;
         }
         .header h1 {
@@ -60,7 +72,7 @@
         }
         .auth-section button {
             padding: 12px 30px;
-            background: #667eea;
+            background: #e67e22;
             color: white;
             border: none;
             border-radius: 6px;
@@ -69,7 +81,7 @@
             transition: background 0.3s;
         }
         .auth-section button:hover {
-            background: #5568d3;
+            background: #d35400;
         }
         .controls {
             padding: 20px 30px;
@@ -146,6 +158,7 @@
             background: #e9ecef;
             font-size: 0.95em;
             color: #495057;
+            display: none;
         }
         .progress-container {
             padding: 40px;
@@ -163,7 +176,7 @@
         }
         .progress-fill {
             height: 100%;
-            background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+            background: linear-gradient(90deg, #2c7873 0%, #e67e22 100%);
             transition: width 0.3s;
             border-radius: 15px;
         }
@@ -178,7 +191,7 @@
         }
         .spinner {
             border: 4px solid #f3f3f3;
-            border-top: 4px solid #667eea;
+            border-top: 4px solid #2c7873;
             border-radius: 50%;
             width: 40px;
             height: 40px;
@@ -202,7 +215,7 @@
         }
         .task-item:hover {
             background: #e9ecef;
-            border-left-color: #667eea;
+            border-left-color: #2c7873;
         }
         .task-item.completed {
             opacity: 0.6;
@@ -336,7 +349,7 @@
             width: 14px;
             height: 14px;
             border: 2px solid #f3f3f3;
-            border-top: 2px solid #667eea;
+            border-top: 2px solid #2c7873;
             border-radius: 50%;
             animation: spin 1s linear infinite;
             margin-left: 8px;
@@ -347,7 +360,7 @@
             width: 14px;
             height: 14px;
             border: 2px solid #f3f3f3;
-            border-top: 2px solid #667eea;
+            border-top: 2px solid #2c7873;
             border-radius: 50%;
             animation: spin 1s linear infinite;
             margin-left: 8px;
@@ -376,7 +389,7 @@
             height: 14px;
             margin-right: 6px;
             border: 2px solid #f3f3f3;
-            border-top: 2px solid #667eea;
+            border-top: 2px solid #2c7873;
             border-radius: 50%;
             animation: spin 1s linear infinite;
             vertical-align: middle;
@@ -403,7 +416,7 @@
             margin-bottom: 0;
         }
         .notes-content a {
-            color: #667eea;
+            color: #2c7873;
             text-decoration: none;
         }
         .notes-content a:hover {
@@ -465,7 +478,7 @@
             display: none;
         }
         .show-more-btn {
-            color: #667eea;
+            color: #2c7873;
             background: none;
             border: none;
             padding: 5px 0;
@@ -491,7 +504,7 @@
         }
         .comment-author {
             font-weight: bold;
-            color: #667eea;
+            color: #2c7873;
             margin-bottom: 5px;
         }
         .comment-date {
@@ -581,11 +594,11 @@
             border-radius: 6px;
             cursor: pointer;
             font-size: 1em;
-            background: #667eea;
+            background: #e67e22;
             color: white;
         }
         .modal-footer button:hover {
-            background: #5568d3;
+            background: #d35400;
         }
         .modal-actions {
             display: flex;
@@ -601,11 +614,11 @@
             font-size: 1em;
         }
         .btn-primary {
-            background: #667eea;
+            background: #e67e22;
             color: white;
         }
         .btn-primary:hover {
-            background: #5568d3;
+            background: #d35400;
         }
         .btn-secondary {
             background: #6c757d;
@@ -656,8 +669,12 @@
 <body>
     <div class="container">
         <div class="header">
-            <h1>🦖 TaskRaptor 🦅</h1>
-            <p>View and manage your assigned tasks from Asana with filtering, sorting, and caching</p>
+            <img src="TaskRaptor.png" alt="TaskRaptor Logo" class="header-logo">
+            <div class="header-content">
+                <h1>TaskRaptor</h1>
+                <p>View and manage your assigned tasks from Asana with filtering, sorting, and caching</p>
+            </div>
+            <img src="TaskRaptor.png" alt="TaskRaptor Logo" class="header-logo">
         </div>
 
         <div id="authSection" class="auth-section">
@@ -1017,7 +1034,7 @@
                 top: ${topPosition}px;
                 right: 20px;
                 background: white;
-                border-left: 4px solid #667eea;
+                border-left: 4px solid #2c7873;
                 padding: 16px 20px;
                 border-radius: 8px;
                 box-shadow: 0 4px 12px rgba(0,0,0,0.15);
@@ -1031,7 +1048,7 @@
             `;
             
             toast.innerHTML = `
-                <div class="spinner" style="width: 20px; height: 20px; border: 3px solid #f3f3f3; border-top: 3px solid #667eea; border-radius: 50%; animation: spin 1s linear infinite;"></div>
+                <div class="spinner" style="width: 20px; height: 20px; border: 3px solid #f3f3f3; border-top: 3px solid #2c7873; border-radius: 50%; animation: spin 1s linear infinite;"></div>
                 <span style="color: #333; font-weight: 500;">Updating tasks in background...</span>
             `;
             
@@ -1195,7 +1212,7 @@
                         ${workspaces.map(ws => `<option value="${ws.gid}">${ws.name}</option>`).join('')}
                     </select>
                     <div style="display: flex; gap: 10px; justify-content: flex-end;">
-                        <button id="workspaceConfirm" class="btn" style="padding: 10px 20px; background: #667eea; color: white; border: none; border-radius: 6px; cursor: pointer;">Continue</button>
+                        <button id="workspaceConfirm" class="btn" style="padding: 10px 20px; background: #e67e22; color: white; border: none; border-radius: 6px; cursor: pointer;">Continue</button>
                     </div>
                 `;
                 
@@ -2493,7 +2510,7 @@
                     </div>
                 </div>
                 <div id="details-${task.gid}" class="task-details" style="display: ${isExpanded ? 'block' : 'none'};">
-                    ${isExpanded && window.backgroundLoadingInProgress ? '<div class="background-loading-spinner" style="padding: 8px; color: #6c757d; font-size: 0.9em; border-bottom: 1px solid #dee2e6; margin-bottom: 10px;"><div class="spinner" style="display: inline-block; width: 14px; height: 14px; margin-right: 6px; border: 2px solid #f3f3f3; border-top: 2px solid #667eea; border-radius: 50%; animation: spin 1s linear infinite;"></div>Updating...</div>' : ''}
+                    ${isExpanded && window.backgroundLoadingInProgress ? '<div class="background-loading-spinner" style="padding: 8px; color: #6c757d; font-size: 0.9em; border-bottom: 1px solid #dee2e6; margin-bottom: 10px;"><div class="spinner" style="display: inline-block; width: 14px; height: 14px; margin-right: 6px; border: 2px solid #f3f3f3; border-top: 2px solid #2c7873; border-radius: 50%; animation: spin 1s linear infinite;"></div>Updating...</div>' : ''}
                 </div>
             `;
 
@@ -2511,7 +2528,7 @@
                         const spinnerDiv = document.createElement('div');
                         spinnerDiv.className = 'background-loading-spinner';
                         spinnerDiv.style.cssText = 'padding: 8px; color: #6c757d; font-size: 0.9em; border-bottom: 1px solid #dee2e6; margin-bottom: 10px;';
-                        spinnerDiv.innerHTML = '<div class="spinner" style="display: inline-block; width: 14px; height: 14px; margin-right: 6px; border: 2px solid #f3f3f3; border-top: 2px solid #667eea; border-radius: 50%; animation: spin 1s linear infinite;"></div>Updating...';
+                        spinnerDiv.innerHTML = '<div class="spinner" style="display: inline-block; width: 14px; height: 14px; margin-right: 6px; border: 2px solid #f3f3f3; border-top: 2px solid #2c7873; border-radius: 50%; animation: spin 1s linear infinite;"></div>Updating...';
                         detailsDiv.appendChild(spinnerDiv);
                     }
                     
@@ -2767,7 +2784,7 @@
                     contentHtml += `
                         <div style="margin-bottom: 10px;">
                             <a href="#" onclick="showEarlierComments(event, '${taskGid}'); return false;" 
-                               style="color: #667eea; text-decoration: none; font-size: 0.9em;">
+                               style="color: #2c7873; text-decoration: none; font-size: 0.9em;">
                                 ↑ Show ${Math.min(5, hiddenCount)} earlier comment${Math.min(5, hiddenCount) > 1 ? 's' : ''}
                             </a>
                         </div>
@@ -4148,7 +4165,7 @@
 
         function linkifyHTML(html) {
             const urlRegex = /(https?:\/\/[^\s<]+)/g;
-            return html.replace(urlRegex, '<a href="$1" target="_blank" style="color: #667eea; text-decoration: underline;">$1</a>');
+            return html.replace(urlRegex, '<a href="$1" target="_blank" style="color: #2c7873; text-decoration: underline;">$1</a>');
         }
 
         function stripHtmlStyling(html) {
