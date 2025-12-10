@@ -2458,7 +2458,7 @@
                         <strong>Notes:</strong>
                         <div style="position: relative; margin-top: 5px;">
                             <button class="btn-edit" onclick="editTaskNotes(event, '${task.gid}')" style="position: absolute; top: 10px; right: 10px; z-index: 10;">Edit</button>
-                            <div id="notes-${task.gid}" class="notes-content ${task.notesExpanded ? '' : 'collapsed'}" style="padding: 10px; padding-top: 40px; background: white; border-radius: 4px; margin-bottom: 0;">${task.notesExpanded ? richTextContent : collapsedContent}</div>
+                            <div id="notes-${task.gid}" class="notes-content ${task.notesExpanded ? '' : 'collapsed'}" style="padding: 10px; background: white; border-radius: 4px; margin-bottom: 0;">${task.notesExpanded ? richTextContent : collapsedContent}</div>
                         </div>
                         <button class="show-more-btn" onclick="toggleNotesExpansion(event, '${task.gid}')" style="display: none;">${task.notesExpanded ? 'Show Less' : 'Show More'}</button>
                     </div>
@@ -2572,8 +2572,17 @@
                 const maxHeight = parseFloat(getComputedStyle(element).maxHeight);
                 const actualHeight = element.scrollHeight;
                 
-                // Find the associated show more button (next sibling)
-                const showMoreBtn = element.nextElementSibling;
+                // Find the associated show more button
+                // For notes: button is sibling of parent div
+                // For comments: button is next sibling
+                let showMoreBtn;
+                if (element.classList.contains('notes-content')) {
+                    // Notes structure: <div wrapper><button edit/><div notes-content/></div><button show-more/>
+                    showMoreBtn = element.parentElement.nextElementSibling;
+                } else {
+                    // Comments structure: <div comment-content/><button show-more/>
+                    showMoreBtn = element.nextElementSibling;
+                }
                 
                 // Determine if content actually overflows
                 const hasOverflow = actualHeight > maxHeight + 25;
