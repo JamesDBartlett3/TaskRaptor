@@ -306,6 +306,11 @@
         .btn-edit:hover, .btn-delete:hover, .btn-action:hover {
             background: #f8f9fa;
         }
+        .btn-mark-all-complete:hover {
+            background: #28a745;
+            color: white;
+            border-color: #28a745;
+        }
         .task-header:hover .btn-edit,
         .task-header:hover .btn-action,
         .comment:hover .btn-edit,
@@ -2073,17 +2078,26 @@
 
         // Recursive function to check if all descendants are complete
         function areAllDescendantsComplete(task) {
-            // If the task itself is marked complete, all its descendants are considered complete
-            if (task.completed) {
+            const isNonTask = task.isSection || task.isProject || task.isPlaceholder;
+            
+            // For non-tasks, only check descendants (they don't have their own completion status)
+            // For real tasks, if the task itself is marked complete, all its descendants are considered complete
+            if (!isNonTask && task.completed) {
                 return true;
             }
             
             if (!task.subtasks || task.subtasks.length === 0) {
                 // Leaf task: check its own completion status
-                return task.completed;
+                // Non-tasks with no subtasks should return true (empty container is "complete")
+                return isNonTask ? true : task.completed;
             }
             
             // Has subtasks: check if all subtasks and their descendants are complete
+            // For regular tasks with subtasks, also check if the task itself is complete
+            if (!isNonTask && !task.completed) {
+                return false;
+            }
+            
             return task.subtasks.every(st => {
                 const subtask = allTasksMap.get(st.gid);
                 if (!subtask) return false;
@@ -2188,6 +2202,7 @@
                         <span class="background-update-spinner"></span>
                     </div>
                     <div class="task-header-buttons">
+                        ${isNonTask && !allSubtasksComplete ? '<button class="btn-action btn-mark-all-complete" onclick="markAllDescendantsComplete(event, \''+task.gid+'\')" title="Mark all descendants complete">✓ Mark all complete</button>' : ''}
                         <button class="btn-action due-date ${dueDateClass}" onclick="setDueDate(event, '${task.gid}')" style="${dueDateStyle}" title="Set Due Date">${dueDateDisplay}</button>
                         <button class="btn-action" onclick="createSubtask(event, '${task.gid}')" title="Add Subtask">➕ Subtask</button>
                         <button class="btn-action rename" onclick="renameTask(event, '${task.gid}')" title="Rename">✏️ Rename</button>
@@ -3073,8 +3088,10 @@
             let currentParent = task.parent;
             while (currentParent) {
                 const parentTask = allTasksMap.get(currentParent.gid);
+                
                 if (parentTask && (parentTask.isSection || parentTask.isProject || parentTask.isPlaceholder)) {
                     const parentElement = document.querySelector(`[data-task-id="${currentParent.gid}"]`);
+                    
                     if (parentElement) {
                         const allDescendantsComplete = areAllDescendantsComplete(parentTask);
                         const parentTaskName = parentElement.querySelector('.task-name');
@@ -3373,6 +3390,123 @@
                 
             } catch (error) {
                 showToast('Failed to create subtask: ' + error.message, 'error');
+            }
+        }
+
+        async function markAllDescendantsComplete(event, taskGid) {
+            event.stopPropagation();
+            
+            const task = allTasksMap.get(taskGid);
+            if (!task) return;
+            
+            // Get all incomplete descendants
+            const incompleteDescendants = [];
+            function collectIncomplete(t) {
+                const isNonTask = t.isSection || t.isProject || t.isPlaceholder;
+                // Only mark actual tasks as complete, not non-tasks
+                if (!isNonTask && !t.completed) {
+                    incompleteDescendants.push(t);
+                }
+                if (t.subtasks) {
+                    t.subtasks.forEach(st => {
+                        const subtask = allTasksMap.get(st.gid);
+                        if (subtask) collectIncomplete(subtask);
+                    });
+                }
+            }
+            collectIncomplete(task);
+            
+            if (incompleteDescendants.length === 0) {
+                showToast('All descendants are already complete', 'info', 2000);
+                return;
+            }
+            
+            // Show confirmation modal
+            const taskCount = incompleteDescendants.length;
+            const taskWord = taskCount > 1 ? 'tasks' : 'task';
+            const content = `
+                <p>This will mark <strong>${taskCount} incomplete ${taskWord}</strong> as complete.</p>
+                <p>Are you sure you want to continue?</p>
+            `;
+            
+            showGenericModal('Mark All Complete', content, [
+                {
+                    text: 'Cancel',
+                    class: 'btn-secondary',
+                    onclick: 'closeGenericModal()'
+                },
+                {
+                    text: 'Mark Complete',
+                    class: 'btn-edit',
+                    onclick: `closeGenericModal(); executeMarkAllComplete('${taskGid}');`
+                }
+            ]);
+        }
+        
+        async function executeMarkAllComplete(taskGid) {
+            const task = allTasksMap.get(taskGid);
+            if (!task) return;
+            
+            // Re-collect incomplete descendants (in case state changed)
+            const incompleteDescendants = [];
+            function collectIncomplete(t) {
+                const isNonTask = t.isSection || t.isProject || t.isPlaceholder;
+                if (!isNonTask && !t.completed) {
+                    incompleteDescendants.push(t);
+                }
+                if (t.subtasks) {
+                    t.subtasks.forEach(st => {
+                        const subtask = allTasksMap.get(st.gid);
+                        if (subtask) collectIncomplete(subtask);
+                    });
+                }
+            }
+            collectIncomplete(task);
+            
+            try {
+                showProgress();
+                updateProgress(0, incompleteDescendants.length, 'Marking tasks complete...');
+                
+                // Mark all as complete
+                for (let i = 0; i < incompleteDescendants.length; i++) {
+                    const descendant = incompleteDescendants[i];
+                    
+                    const response = await fetch(`https://app.asana.com/api/1.0/tasks/${descendant.gid}`, {
+                        method: 'PUT',
+                        headers: {
+                            'Authorization': `Bearer ${personalAccessToken}`,
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({ data: { completed: true } })
+                    });
+                    
+                    if (!response.ok) throw new Error('Failed to update task');
+                    
+                    // Update local state
+                    descendant.completed = true;
+                    
+                    // Update UI for this task
+                    const taskElement = document.querySelector(`[data-task-id="${descendant.gid}"]`);
+                    if (taskElement) {
+                        updateTaskCompletionUI(taskElement, descendant, true);
+                    }
+                    
+                    updateProgress(i + 1, incompleteDescendants.length, `Marked ${i + 1} of ${incompleteDescendants.length} complete...`);
+                }
+                
+                hideProgress();
+                showToast(`Marked ${incompleteDescendants.length} task${incompleteDescendants.length > 1 ? 's' : ''} as complete!`, 'success', 3000);
+                
+                // Update cache
+                saveCache({
+                    allTasksMap: Array.from(allTasksMap.entries()),
+                    rootItems: rootItems,
+                    allParents: Array.from(allParents)
+                });
+                
+            } catch (error) {
+                hideProgress();
+                showToast('Failed to mark tasks complete: ' + error.message, 'error');
             }
         }
 
