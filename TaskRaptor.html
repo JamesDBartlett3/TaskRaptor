@@ -400,6 +400,40 @@
         .notes-content a:hover {
             text-decoration: underline;
         }
+        .notes-content.collapsed,
+        .comment-content.collapsed {
+            max-height: 4.8em; /* 3 lines × 1.6 line-height */
+            overflow: hidden;
+            position: relative;
+        }
+        .notes-content.collapsed::after,
+        .comment-content.collapsed::after {
+            content: '';
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            height: 2.4em;
+            background: linear-gradient(to bottom, 
+                rgba(255,255,255,0) 0%, 
+                rgba(255,255,255,0.3) 25%,
+                rgba(255,255,255,0.6) 50%, 
+                rgba(255,255,255,0.85) 75%,
+                rgba(255,255,255,1) 100%);
+            pointer-events: none;
+        }
+        .show-more-btn {
+            color: #667eea;
+            background: none;
+            border: none;
+            padding: 5px 0;
+            cursor: pointer;
+            font-size: 0.9em;
+            text-decoration: none;
+        }
+        .show-more-btn:hover {
+            text-decoration: underline;
+        }
         .comments-section {
             margin-top: 15px;
             padding: 15px;
@@ -1421,9 +1455,33 @@
                 console.log(`After date filter: ${filteredTasks.length} tasks (from ${allTasks.length})`);
                 console.log('Sample tasks:', filteredTasks.slice(0, 3).map(t => ({name: t.name, completed: t.completed, hasParent: !!t.parent})));
 
-                // Add all filtered tasks to allTasksMap first
-                allTasksMap.clear(); // Clear before repopulating
-                filteredTasks.forEach(task => allTasksMap.set(task.gid, task));
+                // If background loading, preserve existing tasks and merge new data
+                // Otherwise, clear and rebuild
+                if (!background) {
+                    allTasksMap.clear();
+                    filteredTasks.forEach(task => allTasksMap.set(task.gid, task));
+                } else {
+                    // During background loading, UPDATE existing tasks instead of replacing them
+                    filteredTasks.forEach(task => {
+                        const existingTask = allTasksMap.get(task.gid);
+                        if (existingTask) {
+                            // Update only the core task properties, preserve UI state and loaded data
+                            existingTask.name = task.name;
+                            existingTask.completed = task.completed;
+                            existingTask.assignee = task.assignee;
+                            existingTask.due_on = task.due_on;
+                            existingTask.modified_at = task.modified_at;
+                            existingTask.parent = task.parent;
+                            existingTask.notes = task.notes;
+                            existingTask.html_notes = task.html_notes;
+                            existingTask.memberships = task.memberships;
+                            // Keep existing: comments, notesExpanded, commentsShown, subtasks, subtasksLoaded
+                        } else {
+                            // New task, add it
+                            allTasksMap.set(task.gid, task);
+                        }
+                    });
+                }
 
                 // Create placeholder items for missing parents (projects/sections)
                 createMissingParentItems();
@@ -1556,7 +1614,13 @@
                 });
 
                 populateParentFilter();
-                displayTasks();
+                
+                // Only re-render if NOT background loading
+                // During background load, we skip displayTasks() to avoid destroying expanded tasks
+                if (!background) {
+                    displayTasks();
+                }
+                
                 displayFilterBadges();
                 
                 setProgress(100, 'Complete!');
@@ -1586,6 +1650,9 @@
                     window.backgroundLoadingInProgress = false;
                     document.body.classList.remove('background-loading');
                     hideGlobalUpdateSpinners();
+                    
+                    // Now that background loading is complete, refresh the display
+                    displayTasks();
                 }
             }
         }
@@ -1699,8 +1766,19 @@
 
                 const data = await response.json();
                 const task = data.data;
-                task.subtasks = [];
-                task.comments = null;
+                
+                // Preserve existing comments and UI state if task already exists
+                const existingTask = allTasksMap.get(task.gid);
+                if (existingTask) {
+                    task.comments = existingTask.comments;
+                    task.notesExpanded = existingTask.notesExpanded;
+                    task.commentsShown = existingTask.commentsShown;
+                    task.subtasks = existingTask.subtasks || [];
+                } else {
+                    task.subtasks = [];
+                    task.comments = null;
+                }
+                
                 allTasksMap.set(task.gid, task);
                 return task;
             } catch (error) {
@@ -1740,9 +1818,20 @@
                     const isUnassigned = !subtask.assignee;
                     
                     if (isAssignedToUser || (isUnassigned && parentAssignedToUser)) {
-                        subtask.subtasks = [];
-                        subtask.comments = null;
-                        subtask.subtasksLoaded = false;
+                        // Preserve existing comments and UI state if subtask already exists
+                        const existingSubtask = allTasksMap.get(subtask.gid);
+                        if (existingSubtask) {
+                            subtask.comments = existingSubtask.comments;
+                            subtask.notesExpanded = existingSubtask.notesExpanded;
+                            subtask.commentsShown = existingSubtask.commentsShown;
+                            subtask.subtasks = existingSubtask.subtasks || [];
+                            subtask.subtasksLoaded = existingSubtask.subtasksLoaded || false;
+                        } else {
+                            subtask.subtasks = [];
+                            subtask.comments = null;
+                            subtask.subtasksLoaded = false;
+                        }
+                        
                         allTasksMap.set(subtask.gid, subtask);
                         task.subtasks.push(subtask);
                         
@@ -2253,19 +2342,26 @@
                         detailsDiv.innerHTML = '<div class="loading-indicator" style="padding: 10px 0 10px 40px; color: #6c757d;"><div class="spinner" style="display: inline-block; width: 16px; height: 16px; margin-right: 8px;"></div>Loading...</div>';
                     }
 
+                    // Track whether we need to load new data
+                    let needsDataLoad = false;
+
                     // Load comments if not loaded (only for actual tasks, not projects/sections)
                     if (!task.comments && !task.isProject && !task.isSection && !task.isPlaceholder) {
                         await loadComments(taskGid);
+                        needsDataLoad = true;
                     }
 
                     // Load subtasks if not loaded
                     if (!task.subtasksLoaded) {
                         const isAssignedToUser = task.assignee && task.assignee.gid === currentUserId;
                         await loadSubtasksFiltered(task.gid, isAssignedToUser);
+                        needsDataLoad = true;
                     }
 
-                    // Render all content (notes, comments, subtasks) - refresh with latest data
-                    await renderTaskDetails(taskGid);
+                    // Only re-render if we loaded new data OR if we didn't have cached content initially
+                    if (needsDataLoad || !hasCachedContent) {
+                        await renderTaskDetails(taskGid);
+                    }
                     
                     // Remove loading state and spinner
                     tasksBeingLoaded.delete(taskGid);
@@ -2293,16 +2389,22 @@
 
             // Notes section
             if ((task.notes && task.notes.trim().length > 0) || (task.html_notes && task.html_notes.trim().length > 0)) {
-                let notesContent;
+                // Initially show plain text (collapsed to 3 lines)
+                const plainTextContent = linkifyHTML(task.notes || '');
                 
-                // Use html_notes if available (includes proper formatting for links/mentions)
+                // Full rich text for expanded view
+                let richTextContent;
                 if (task.html_notes) {
-                    // Parse the HTML to extract just the body content
                     const parser = new DOMParser();
                     const doc = parser.parseFromString(task.html_notes, 'text/html');
-                    notesContent = doc.body.innerHTML;
+                    richTextContent = doc.body.innerHTML;
                 } else {
-                    notesContent = linkifyHTML(task.notes);
+                    richTextContent = plainTextContent;
+                }
+                
+                // Initialize expansion state if not set
+                if (task.notesExpanded === undefined) {
+                    task.notesExpanded = false;
                 }
                 
                 contentHtml += `
@@ -2311,7 +2413,8 @@
                             <strong>Notes:</strong>
                             <button class="btn-edit" onclick="editTaskNotes(event, '${task.gid}')">Edit</button>
                         </div>
-                        <div class="notes-content" style="margin-top: 5px; padding: 10px; background: white; border-radius: 4px; line-height: 1.6; white-space: pre-line; margin-bottom: 0;">${notesContent}</div>
+                        <div id="notes-${task.gid}" class="notes-content ${task.notesExpanded ? '' : 'collapsed'}" style="margin-top: 5px; padding: 10px; background: white; border-radius: 4px; line-height: 1.6; ${task.notesExpanded ? '' : 'white-space: pre-line;'} margin-bottom: 0;">${task.notesExpanded ? richTextContent : plainTextContent}</div>
+                        <button class="show-more-btn" onclick="toggleNotesExpansion(event, '${task.gid}')" style="display: none;">${task.notesExpanded ? 'Show Less' : 'Show More'}</button>
                     </div>
                 `;
             }
@@ -2348,8 +2451,15 @@
                 
                 // Display comments in chronological order
                 commentsToDisplay.forEach(comment => {
-                    // Use html_text if available (includes proper formatting for mentions/links), otherwise fall back to text
-                    const commentContent = comment.html_text || linkifyHTML(comment.text);
+                    // Plain text for collapsed view
+                    const plainCommentText = linkifyHTML(comment.text);
+                    // Rich text for expanded view
+                    const richCommentText = comment.html_text || plainCommentText;
+                    
+                    // Initialize expansion state if not set
+                    if (comment.expanded === undefined) {
+                        comment.expanded = false;
+                    }
                     
                     // Only show edit/delete buttons if current user created the comment
                     const isOwnComment = comment.created_by.gid === currentUserId;
@@ -2369,7 +2479,8 @@
                                 </div>
                                 ${actionButtons}
                             </div>
-                            <div id="comment-content-${comment.gid}">${commentContent}</div>
+                            <div id="comment-content-${comment.gid}" class="comment-content ${comment.expanded ? '' : 'collapsed'}">${comment.expanded ? richCommentText : plainCommentText}</div>
+                            <button class="show-more-btn" onclick="toggleCommentExpansion(event, '${taskGid}', '${comment.gid}')" style="display: none;">${comment.expanded ? 'Show Less' : 'Show More'}</button>
                             <div id="comment-edit-${comment.gid}" style="display: none;"></div>
                         </div>
                     `;
@@ -2405,6 +2516,116 @@
                     const subtaskElement = renderTask(subtask, level + 1);
                     detailsDiv.appendChild(subtaskElement);
                 });
+            }
+
+            // Check if Show More buttons are needed after DOM is updated
+            setTimeout(() => checkAndUpdateShowMoreButtons(), 0);
+        }
+
+        function checkAndUpdateShowMoreButtons() {
+            // Check all notes and comments to see if they actually overflow
+            document.querySelectorAll('.notes-content.collapsed, .comment-content.collapsed').forEach(element => {
+                const maxHeight = parseFloat(getComputedStyle(element).maxHeight);
+                const actualHeight = element.scrollHeight;
+                
+                // Find the associated show more button (next sibling)
+                const showMoreBtn = element.nextElementSibling;
+                
+                // Only show button if content actually overflows by more than 1.6em (1 line)
+                if (showMoreBtn && showMoreBtn.classList.contains('show-more-btn')) {
+                    if (actualHeight > maxHeight + 16) { // 16px ≈ 1em extra threshold
+                        showMoreBtn.style.display = 'inline-block';
+                    } else {
+                        showMoreBtn.style.display = 'none';
+                        // Remove gradient if not actually truncated
+                        element.classList.remove('collapsed');
+                    }
+                }
+            });
+        }
+
+        async function toggleNotesExpansion(event, taskGid) {
+            event.preventDefault();
+            event.stopPropagation();
+            
+            const task = allTasksMap.get(taskGid);
+            if (!task) return;
+            
+            // Toggle expansion state
+            task.notesExpanded = !task.notesExpanded;
+            
+            const notesDiv = document.getElementById(`notes-${taskGid}`);
+            const button = event.target;
+            
+            if (!notesDiv) return;
+            
+            if (task.notesExpanded) {
+                // Expand: show rich text
+                notesDiv.classList.remove('collapsed');
+                let richTextContent;
+                if (task.html_notes) {
+                    const parser = new DOMParser();
+                    const doc = parser.parseFromString(task.html_notes, 'text/html');
+                    richTextContent = doc.body.innerHTML;
+                } else {
+                    richTextContent = linkifyHTML(task.notes || '');
+                }
+                notesDiv.innerHTML = richTextContent;
+                notesDiv.style.whiteSpace = '';
+                button.textContent = 'Show Less';
+            } else {
+                // Collapse: show plain text
+                notesDiv.classList.add('collapsed');
+                const plainTextContent = linkifyHTML(task.notes || '');
+                notesDiv.innerHTML = plainTextContent;
+                notesDiv.style.whiteSpace = 'pre-line';
+                button.textContent = 'Show More';
+            }
+        }
+
+        async function toggleCommentExpansion(event, taskGid, commentGid) {
+            event.preventDefault();
+            event.stopPropagation();
+            
+            console.log('toggleCommentExpansion called', { taskGid, commentGid, backgroundLoading: window.backgroundLoadingInProgress });
+            
+            const task = allTasksMap.get(taskGid);
+            if (!task || !task.comments) {
+                console.log('No task or comments found');
+                return;
+            }
+            
+            // Find the comment and toggle its expanded state
+            const comment = task.comments.find(c => c.gid === commentGid);
+            if (!comment) {
+                console.log('Comment not found');
+                return;
+            }
+            
+            comment.expanded = !comment.expanded;
+            
+            const commentDiv = document.getElementById(`comment-content-${commentGid}`);
+            const button = event.target;
+            
+            if (!commentDiv) {
+                console.log('Comment div not found');
+                return;
+            }
+            
+            console.log('Toggling comment', { expanded: comment.expanded });
+            
+            if (comment.expanded) {
+                // Expand: show rich text
+                commentDiv.classList.remove('collapsed');
+                const richCommentText = comment.html_text || linkifyHTML(comment.text);
+                commentDiv.innerHTML = richCommentText;
+                button.textContent = 'Show Less';
+            } else {
+                // Collapse: show plain text
+                commentDiv.classList.add('collapsed');
+                const plainCommentText = linkifyHTML(comment.text);
+                commentDiv.innerHTML = plainCommentText;
+                button.textContent = 'Show More';
             }
         }
 
