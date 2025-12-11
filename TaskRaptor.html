@@ -1195,12 +1195,20 @@
 
         // Cache management
         function saveCache(data) {
-            const cacheData = {
-                timestamp: Date.now(),
-                data: data
-            };
             try {
+                // Create unified cache entry with metadata
+                // Cache contains ALL tasks (completed + incomplete)
+                const cacheData = {
+                    timestamp: Date.now(),
+                    data: data,
+                    // Store date filter metadata so we know if cache is still valid
+                    dateRange: filterState.dateRange,
+                    customStart: filterState.customStart,
+                    customEnd: filterState.customEnd
+                };
+                
                 localStorage.setItem('taskraptor_cache', JSON.stringify(cacheData));
+                console.log(`💾 Saved unified cache with ${data.allTasksMap.length} tasks (includes all completion statuses)`);
             } catch (error) {
                 console.error('Failed to save cache:', error);
                 if (error.name === 'QuotaExceededError') {
@@ -1220,24 +1228,56 @@
             if (!cached) return null;
             
             const cacheData = JSON.parse(cached);
-            const ageHours = (Date.now() - cacheData.timestamp) / (1000 * 60 * 60);
             
-            // Cache valid for 24 hours
+            // Check if cache is valid (< 24 hours old)
+            const ageHours = (Date.now() - cacheData.timestamp) / (1000 * 60 * 60);
             if (ageHours > 24) {
-                localStorage.removeItem('taskraptor_cache');
+                console.log('❌ Cache expired (age: ' + ageHours.toFixed(1) + ' hours)');
                 return null;
             }
             
-            // Return both data and timestamp for incremental updates
+            // Check if date filter matches
+            const dateFilterMatches = cacheData.dateRange === filterState.dateRange &&
+                                     cacheData.customStart === filterState.customStart &&
+                                     cacheData.customEnd === filterState.customEnd;
+            
+            if (!dateFilterMatches) {
+                console.log('⚠️ Cache date filter mismatch - will reload');
+                return null;
+            }
+            
+            console.log('📦 Loading from unified cache (contains all tasks)');
             return {
                 data: cacheData.data,
-                timestamp: cacheData.timestamp
+                timestamp: cacheData.timestamp,
+                dateRange: cacheData.dateRange,
+                customStart: cacheData.customStart,
+                customEnd: cacheData.customEnd
             };
         }
 
-        function clearCache() {
-            localStorage.removeItem('taskraptor_cache');
+        function clearCache(cacheType = null) {
+            if (!cacheType) {
+                // Clear all caches
+                localStorage.removeItem('taskraptor_cache');
+                console.log('🗑️ Cleared all caches');
+            } else {
+                // Clear specific cache
+                const cached = localStorage.getItem('taskraptor_cache');
+                if (cached) {
+                    const fullCache = JSON.parse(cached);
+                    delete fullCache[cacheType];
+                    if (Object.keys(fullCache).length === 0) {
+                        localStorage.removeItem('taskraptor_cache');
+                    } else {
+                        localStorage.setItem('taskraptor_cache', JSON.stringify(fullCache));
+                    }
+                    console.log(`🗑️ Cleared ${cacheType} cache`);
+                }
+            }
         }
+        
+
 
         // Toast notifications
         function showToast(message, type = 'info', duration = 5000) {
@@ -1892,26 +1932,18 @@
                     apiUrl += `&modified_since=${modifiedSince}`;
                     console.log('✨ Incremental update: fetching ALL tasks modified since', modifiedSince, '(ignoring filter for completeness)');
                 } else {
-                    // For full loads, add API-level filters based on completion status and date range
+                    // For full loads, apply date filtering at API level to reduce payload
+                    // NOTE: Completion status filtering is done CLIENT-SIDE ONLY
+                    // This ensures the cache contains ALL tasks (completed + incomplete)
+                    // so that switching between completion filters is instant
                     const dateFilter = getDateFilter();
                     
-                    if (filterState.completion === 'completed') {
-                        // For completed tasks, use completed_since (API-supported parameter)
-                        if (dateFilter) {
-                            apiUrl += `&completed_since=${dateFilter}`;
-                        }
-                        // Note: Without completed_since, API returns ALL tasks, so we need date filter
-                        // We'll filter by completion status client-side
-                    } else if (filterState.completion === 'incomplete') {
-                        // For incomplete tasks only: Use completed_since with far-future date
-                        // This exploits the fact that completed_since returns ALL incomplete tasks
-                        // plus completed tasks after the date. A future date means zero completed tasks.
-                        apiUrl += '&completed_since=2099-01-01T00:00:00.000Z';
+                    if (dateFilter && filterState.dateRange !== 'all') {
+                        // Use modified_since to get all tasks (completed and incomplete) within date range
+                        apiUrl += `&modified_since=${dateFilter}`;
+                        console.log('📅 Date filter applied at API level: modified_since=' + dateFilter);
                     } else {
-                        // For 'both' mode, use modified_since if date filter is set
-                        if (dateFilter && filterState.dateRange !== 'all') {
-                            apiUrl += `&modified_since=${dateFilter}`;
-                        }
+                        console.log('📅 No date filter - fetching ALL tasks');
                     }
                 }
 
@@ -1955,22 +1987,13 @@
                     parentName: t.parent?.name
                 })));
 
-                // Filter by completion status if needed
-                // (For 'incomplete' mode, API should already filter via completed_since trick,
-                //  but we double-check client-side as a safety net)
+                // Do NOT filter by completion status here!
+                // The cache should contain ALL tasks (completed + incomplete)
+                // Completion filtering happens client-side in filterTasksByCompletion()
+                // This allows instant switching between completion filters without API calls
                 let tasksAfterCompletionFilter = allTasks;
-                if (filterState.completion === 'completed') {
-                    tasksAfterCompletionFilter = allTasks.filter(t => t.completed);
-                    console.log(`Filtered to completed tasks: ${tasksAfterCompletionFilter.length} tasks`);
-                } else if (filterState.completion === 'incomplete') {
-                    // API should have already filtered, but verify
-                    const beforeFilter = allTasks.length;
-                    tasksAfterCompletionFilter = allTasks.filter(t => !t.completed);
-                    if (beforeFilter !== tasksAfterCompletionFilter.length) {
-                        console.warn(`⚠️ API returned ${beforeFilter - tasksAfterCompletionFilter.length} completed tasks despite completed_since filter!`);
-                    }
-                    console.log(`Incomplete tasks: ${tasksAfterCompletionFilter.length}`);
-                }
+                console.log(`Keeping all ${allTasks.length} tasks in cache (${completedCount} completed, ${incompleteCount} incomplete)`);
+                console.log('Completion filtering will be applied client-side when displaying tasks');
 
                 // Then filter by date if needed and initialize structure
                 const filteredTasks = filterTasksByDate(tasksAfterCompletionFilter).map(task => {
@@ -2273,12 +2296,15 @@
                 
                 setProgress(90, 'Finalizing...');
 
-                // Save to cache
+                // Save to appropriate cache based on what we just loaded
+                const cacheType = filterState.completion === 'incomplete' ? 'incomplete' :
+                                 filterState.completion === 'completed' ? 'completed' :
+                                 'both';
                 saveCache({
                     allTasksMap: Array.from(allTasksMap.entries()),
                     rootItems: rootItems,
                     allParents: Array.from(allParents)
-                });
+                }, cacheType);
 
                 populateParentFilter();
                 
@@ -2661,53 +2687,322 @@
             const showCompleted = filterState.completion === 'completed';
             console.log('Show completed:', showCompleted);
 
-            function filterRecursive(task) {
-                // Projects and sections should always pass through (they contain tasks)
+            // Collect all matching tasks from the entire tree
+            const matchingTasks = [];
+            
+            function collectMatching(task, parentChain = []) {
+                // Projects and sections are containers - check their children
                 if (task.isProject || task.isSection || task.isPlaceholder) {
-                    // Filter their subtasks recursively
                     if (task.subtasks && task.subtasks.length > 0) {
-                        const filteredSubtasks = task.subtasks
-                            .map(filterRecursive)
-                            .filter(t => t !== null);
+                        // Add this container to the parent chain
+                        const newParentChain = [...parentChain, {gid: task.gid, name: task.name}];
+                        task.subtasks.forEach(st => collectMatching(st, newParentChain));
+                    }
+                    return;
+                }
+                
+                // Check if this real task matches the filter
+                const matches = task.completed === showCompleted;
+                
+                if (matches) {
+                    // This task matches - add it with its parent chain
+                    matchingTasks.push({
+                        task: task,
+                        parentChain: parentChain
+                    });
+                }
+                
+                // Recurse into subtasks
+                if (task.subtasks && task.subtasks.length > 0) {
+                    const newParentChain = [...parentChain, {gid: task.gid, name: task.name}];
+                    task.subtasks.forEach(st => collectMatching(st, newParentChain));
+                }
+            }
+            
+            // Collect all matching tasks from all root items
+            // Use collapsedParentChain if it exists to maintain proper parent chain context
+            tasks.forEach(task => collectMatching(task, task.collapsedParentChain || []));
+            
+            console.log('Found', matchingTasks.length, 'matching tasks');
+            
+            // Group tasks by common parent chain prefixes
+            function findCommonPrefixLength(chain1, chain2) {
+                let i = 0;
+                while (i < chain1.length && i < chain2.length && chain1[i].gid === chain2[i].gid) {
+                    i++;
+                }
+                return i;
+            }
+            
+            function groupByCommonPrefix() {
+                const groups = [];
+                const ungrouped = [];
+                const processed = new Set();
+                
+                for (let i = 0; i < matchingTasks.length; i++) {
+                    if (processed.has(i)) continue;
+                    
+                    const current = matchingTasks[i];
+                    const group = [i];
+                    let maxCommonLength = 0;
+                    
+                    // Find all other tasks that share a common prefix with this one
+                    for (let j = i + 1; j < matchingTasks.length; j++) {
+                        if (processed.has(j)) continue;
                         
-                        // Include this container if it has any matching subtasks
-                        if (filteredSubtasks.length > 0) {
-                            return {
-                                ...task,
-                                subtasks: filteredSubtasks
-                            };
+                        const other = matchingTasks[j];
+                        const commonLength = findCommonPrefixLength(current.parentChain, other.parentChain);
+                        
+                        if (commonLength > 0) {
+                            group.push(j);
+                            maxCommonLength = Math.max(maxCommonLength, commonLength);
                         }
                     }
+                    
+                    if (group.length > 1) {
+                        // This group has multiple tasks sharing a prefix
+                        group.forEach(idx => processed.add(idx));
+                        
+                        // Find the actual common prefix length for all tasks in the group
+                        let actualCommonLength = matchingTasks[group[0]].parentChain.length;
+                        for (let k = 1; k < group.length; k++) {
+                            actualCommonLength = findCommonPrefixLength(
+                                matchingTasks[group[0]].parentChain,
+                                matchingTasks[group[k]].parentChain
+                            );
+                        }
+                        
+                        groups.push({
+                            indices: group,
+                            commonPrefixLength: actualCommonLength
+                        });
+                    } else {
+                        // Single task, no grouping needed
+                        processed.add(i);
+                        ungrouped.push(i);
+                    }
+                }
+                
+                return { groups, ungrouped };
+            }
+            
+            const { groups, ungrouped } = groupByCommonPrefix();
+            
+            console.log('Grouped:', groups.length, 'groups, Ungrouped:', ungrouped.length, 'tasks');
+            
+            // Now build the result hierarchy
+            // Tasks with no parents or all parents matching stay in hierarchy
+            // Tasks with any non-matching parent get promoted to root level with breadcrumbs
+            // Tasks in groups get nested under their common parent
+            
+            function buildFilteredHierarchy() {
+                const result = [];
+                const processed = new Set();
+                
+                // First, handle grouped tasks
+                for (const group of groups) {
+                    const firstTaskData = matchingTasks[group.indices[0]];
+                    const commonPrefix = firstTaskData.parentChain.slice(0, group.commonPrefixLength);
+                    
+                    // Get the deepest common parent
+                    const commonParentInfo = commonPrefix[commonPrefix.length - 1];
+                    const commonParentTask = allTasksMap.get(commonParentInfo.gid);
+                    
+                    // Create a container for this common parent
+                    const container = {
+                        gid: commonParentInfo.gid,
+                        name: commonParentInfo.name,
+                        isGroupedContainer: true,
+                        isProject: commonParentTask?.isProject || false,
+                        isSection: commonParentTask?.isSection || false,
+                        isPlaceholder: commonParentTask?.isPlaceholder || false,
+                        completed: false,
+                        collapsedParentChain: commonPrefix.slice(0, -1), // Everything before this parent
+                        subtasks: []
+                    };
+                    
+                    // Add each task in the group as a child of this container
+                    for (const idx of group.indices) {
+                        const { task, parentChain } = matchingTasks[idx];
+                        processed.add(task.gid);
+                        
+                        // The remaining chain after the common prefix
+                        const remainingChain = parentChain.slice(group.commonPrefixLength);
+                        
+                        // If there's a remaining chain, we need to build intermediate containers
+                        if (remainingChain.length > 0) {
+                            // Build nested structure for remaining chain
+                            let currentContainer = container;
+                            
+                            for (let i = 0; i < remainingChain.length; i++) {
+                                const chainItem = remainingChain[i];
+                                
+                                // Check if this container already exists in current level
+                                let existingContainer = currentContainer.subtasks.find(
+                                    st => st.gid === chainItem.gid
+                                );
+                                
+                                if (!existingContainer) {
+                                    const chainTask = allTasksMap.get(chainItem.gid);
+                                    existingContainer = {
+                                        gid: chainItem.gid,
+                                        name: chainItem.name,
+                                        isGroupedContainer: true,
+                                        isProject: chainTask?.isProject || false,
+                                        isSection: chainTask?.isSection || false,
+                                        isPlaceholder: chainTask?.isPlaceholder || false,
+                                        completed: chainTask?.completed || false,
+                                        subtasks: []
+                                    };
+                                    currentContainer.subtasks.push(existingContainer);
+                                }
+                                
+                                currentContainer = existingContainer;
+                            }
+                            
+                            // Add the final task to the deepest container
+                            currentContainer.subtasks.push({
+                                ...task,
+                                subtasks: filterSubtasks(task)
+                            });
+                        } else {
+                            // No remaining chain, add task directly
+                            container.subtasks.push({
+                                ...task,
+                                subtasks: filterSubtasks(task)
+                            });
+                        }
+                    }
+                    
+                    result.push(container);
+                }
+                
+                // Then handle ungrouped tasks (original logic)
+                for (const idx of ungrouped) {
+                    const {task, parentChain} = matchingTasks[idx];
+                    if (processed.has(task.gid)) continue;
+                    
+                    // Check if all parents match the filter
+                    let allParentsMatch = true;
+                    for (const parent of parentChain) {
+                        const parentTask = allTasksMap.get(parent.gid);
+                        if (parentTask && !parentTask.isProject && !parentTask.isSection && !parentTask.isPlaceholder) {
+                            // This is a real task parent - check if it matches
+                            if (parentTask.completed !== showCompleted) {
+                                allParentsMatch = false;
+                                break;
+                            }
+                        }
+                    }
+                    
+                    if (!allParentsMatch || parentChain.length === 0) {
+                        // Promote to root level with breadcrumbs
+                        const promoted = {
+                            ...task,
+                            collapsedParentChain: parentChain,
+                            subtasks: filterSubtasks(task)
+                        };
+                        result.push(promoted);
+                        processed.add(task.gid);
+                    } else {
+                        // All parents match - keep in hierarchy
+                        // This will be handled by building the hierarchy from the top
+                    }
+                }
+                
+                // For tasks that should stay in hierarchy, we need to build the tree properly
+                // Start from roots and build down, only including matching tasks or containers with 2+ matching descendants
+                function buildFromRoot(task) {
+                    if (task.isProject || task.isSection || task.isPlaceholder) {
+                        // This is a container - recursively build its children
+                        const filteredSubs = [];
+                        if (task.subtasks) {
+                            for (const sub of task.subtasks) {
+                                const built = buildFromRoot(sub);
+                                if (built) filteredSubs.push(built);
+                            }
+                        }
+                        
+                        // Count total real task descendants (recursively)
+                        function countRealTaskDescendants(items) {
+                            let count = 0;
+                            for (const item of items) {
+                                if (item.isProject || item.isSection || item.isPlaceholder) {
+                                    // This is a container - count its descendants
+                                    if (item.subtasks && item.subtasks.length > 0) {
+                                        count += countRealTaskDescendants(item.subtasks);
+                                    }
+                                } else {
+                                    // This is a real task
+                                    count++;
+                                }
+                            }
+                            return count;
+                        }
+                        
+                        const totalDescendants = countRealTaskDescendants(filteredSubs);
+                        
+                        // Only include container if it has 2+ real task descendants (counting recursively)
+                        if (totalDescendants >= 2) {
+                            return {...task, subtasks: filteredSubs};
+                        }
+                        // If < 2 real task descendants, don't include this container
+                        // The real tasks within will be promoted to root level
+                        return null;
+                    }
+                    
+                    if (processed.has(task.gid)) return null; // Already promoted
+                    
+                    // This is a regular task - only include if it matches the filter
+                    if (task.completed === showCompleted) {
+                        processed.add(task.gid);
+                        return {
+                            ...task,
+                            subtasks: filterSubtasks(task)
+                        };
+                    }
+                    
+                    // Task doesn't match filter - don't include it
+                    // But check if it has matching descendants that should be promoted
+                    if (task.subtasks && task.subtasks.length > 0) {
+                        // Recursively check for matching descendants
+                        for (const sub of task.subtasks) {
+                            buildFromRoot(sub); // This will handle promotion if needed
+                        }
+                    }
+                    
                     return null;
                 }
                 
-                // Check if this task matches the filter
-                const matches = task.completed === showCompleted;
-                
-                // Filter subtasks recursively
-                if (task.subtasks && task.subtasks.length > 0) {
-                    const filteredSubtasks = task.subtasks
-                        .map(filterRecursive)
-                        .filter(t => t !== null);
-                    
-                    // If this task matches OR has matching subtasks, include it
-                    if (matches || filteredSubtasks.length > 0) {
-                        return {
-                            ...task,
-                            subtasks: filteredSubtasks
-                        };
-                    }
-                } else if (matches) {
-                    // Leaf task that matches
-                    return task;
+                for (const rootTask of tasks) {
+                    const built = buildFromRoot(rootTask);
+                    if (built) result.push(built);
                 }
                 
-                return null;
+                return result;
             }
-
-            const result = tasks
-                .map(filterRecursive)
-                .filter(t => t !== null);
+            
+            function filterSubtasks(task) {
+                if (!task.subtasks || task.subtasks.length === 0) return [];
+                
+                const filtered = [];
+                for (const sub of task.subtasks) {
+                    if (sub.isProject || sub.isSection || sub.isPlaceholder) {
+                        const filteredSubs = filterSubtasks(sub);
+                        if (filteredSubs.length > 0) {
+                            filtered.push({...sub, subtasks: filteredSubs});
+                        }
+                    } else if (sub.completed === showCompleted) {
+                        filtered.push({
+                            ...sub,
+                            subtasks: filterSubtasks(sub)
+                        });
+                    }
+                }
+                return filtered;
+            }
+            
+            const result = buildFilteredHierarchy();
             
             console.log('After filtering:', result.length, 'tasks remain');
             console.log('Sample tasks:', result.slice(0, 3).map(t => ({name: t.name, completed: t.completed})));
@@ -2844,33 +3139,71 @@
                 return isNonTask ? true : task.completed;
             }
             
-            // Has subtasks: check if all subtasks and their descendants are complete
-            // For regular tasks with subtasks, also check if the task itself is complete
-            if (!isNonTask && !task.completed) {
-                return false;
+            // Has subtasks: check if all visible subtasks would be DISPLAYED as complete
+            // Get filtered subtasks based on current completion filter
+            const filteredSubtasks = task.subtasks.filter(subtask => 
+                shouldDisplayTask(subtask, filterState.completion)
+            );
+            
+            // If no visible subtasks, treat as complete
+            if (filteredSubtasks.length === 0) {
+                return true;
             }
             
-            return task.subtasks.every(st => {
+            // Check if all visible subtasks would be displayed as complete
+            // A subtask is displayed as complete if:
+            // 1. It's actually completed, OR
+            // 2. It's a container where all ITS visible descendants are complete (recursive)
+            return filteredSubtasks.every(st => {
                 const subtask = allTasksMap.get(st.gid);
                 if (!subtask) return false;
                 
-                // Recursively check this subtask
-                return areAllDescendantsComplete(subtask);
+                // If subtask is completed, it's displayed as complete
+                if (subtask.completed) return true;
+                
+                // If subtask is a structural non-task, check its descendants
+                const subtaskIsNonTask = subtask.isSection || subtask.isProject || subtask.isPlaceholder;
+                if (subtaskIsNonTask) {
+                    return areAllDescendantsComplete(subtask);
+                }
+                
+                // If subtask is a regular task with subtasks, check if all ITS visible descendants are complete
+                if (subtask.subtasks && subtask.subtasks.length > 0) {
+                    // Recursively check if this subtask would be displayed as complete
+                    return areAllDescendantsComplete(subtask);
+                }
+                
+                // Regular task without subtasks: check its completion status
+                return subtask.completed;
             });
         }
 
         function renderTask(task, level, isRoot = false) {
-            // Check if this is a non-task (section, project, or placeholder)
-            const isNonTask = task.isSection || task.isProject || task.isPlaceholder;
+            // Check if this is a structural non-task (section, project, placeholder, or grouped container)
+            const isStructuralNonTask = task.isSection || task.isProject || task.isPlaceholder || task.isGroupedContainer;
             
-            // For non-tasks, recursively check if all descendants are complete
-            let allSubtasksComplete = false;
-            if (isNonTask && task.subtasks && task.subtasks.length > 0) {
-                allSubtasksComplete = areAllDescendantsComplete(task);
+            // Check if all visible descendants are complete (applies to all tasks with subtasks)
+            let allVisibleDescendantsComplete = false;
+            if (task.subtasks && task.subtasks.length > 0) {
+                // Get filtered subtasks based on current completion filter
+                const filteredSubtasks = task.subtasks.filter(subtask => 
+                    shouldDisplayTask(subtask, filterState.completion)
+                );
+                
+                // If we have filtered subtasks, check if they're all completed
+                if (filteredSubtasks.length > 0) {
+                    allVisibleDescendantsComplete = filteredSubtasks.every(st => areAllDescendantsComplete(st));
+                }
             }
             
+            // Determine if this should be treated as a container (no checkbox)
+            // Either structural non-task OR regular task with all visible descendants complete
+            const shouldTreatAsContainer = !isStructuralNonTask && allVisibleDescendantsComplete;
+            const isNonTask = isStructuralNonTask || shouldTreatAsContainer;
+            
             // Determine display completion status
-            const displayAsCompleted = task.completed || (isNonTask && allSubtasksComplete);
+            // Style as completed if: task itself is completed OR (is container AND all visible descendants are complete)
+            const displayAsCompleted = task.completed || (isNonTask && allVisibleDescendantsComplete);
             
             const div = document.createElement('div');
             div.className = `task-item ${displayAsCompleted ? 'completed' : ''}`;
@@ -2918,11 +3251,15 @@
             let breadcrumbHtml = '';
             // Show full parent hierarchy for root items
             if (isRoot) {
-                let parentChain = getParentChainFromMap(task.gid);
+                let parentChain;
                 
-                // If this task has a collapsed parent chain, prepend it
+                // If this task has a collapsed parent chain (from filtering or single-child collapse),
+                // use ONLY that chain - don't concatenate with getParentChainFromMap
                 if (task.collapsedParentChain && task.collapsedParentChain.length > 0) {
-                    parentChain = [...task.collapsedParentChain, ...parentChain];
+                    parentChain = task.collapsedParentChain;
+                } else {
+                    // Otherwise, walk up the parent chain from allTasksMap
+                    parentChain = getParentChainFromMap(task.gid);
                 }
                 
                 if (parentChain.length > 0) {
@@ -2958,7 +3295,7 @@
                         ${!hasNotes && !task.isProject && !task.isSection && !task.isPlaceholder ? '<button class="btn-action" onclick="editTaskNotes(event, \''+task.gid+'\')" title="Add Notes">📝 Notes</button>' : ''}
                         <button class="btn-action rename" onclick="renameTask(event, '${task.gid}')" title="Rename">✏️ Rename</button>
                         <button class="btn-action" onclick="createSubtask(event, '${task.gid}')" title="Add Subtask">➕ Subtask</button>
-                        ${isNonTask && !allSubtasksComplete ? '<button class="btn-action btn-mark-all-complete" onclick="markAllDescendantsComplete(event, \''+task.gid+'\')" title="Mark all descendants complete">✓ Mark all complete</button>' : ''}
+                        ${isNonTask && !allVisibleDescendantsComplete ? '<button class="btn-action btn-mark-all-complete" onclick="markAllDescendantsComplete(event, \''+task.gid+'\')" title="Mark all descendants complete">✓ Mark all complete</button>' : ''}
                     </div>
                 </div>
                 <div id="details-${task.gid}" class="task-details" style="display: ${isExpanded ? 'block' : 'none'};">
@@ -3175,6 +3512,33 @@
             saveExpandStates();
         }
 
+        // Helper function to check if a task should be displayed based on completion filter
+        function shouldDisplayTask(task, completionFilter) {
+            // Non-tasks (projects, sections, placeholders, grouped containers) are containers
+            // Show them if they have any matching descendants
+            if (task.isProject || task.isSection || task.isPlaceholder || task.isGroupedContainer) {
+                if (!task.subtasks || task.subtasks.length === 0) return false;
+                return task.subtasks.some(st => shouldDisplayTask(st, completionFilter));
+            }
+            
+            // For real tasks, check completion status
+            if (completionFilter === 'both') {
+                return true; // Show all tasks
+            } else if (completionFilter === 'completed') {
+                // Show if completed, OR has completed descendants
+                if (task.completed) return true;
+                if (!task.subtasks || task.subtasks.length === 0) return false;
+                return task.subtasks.some(st => shouldDisplayTask(st, completionFilter));
+            } else if (completionFilter === 'uncompleted') {
+                // Show if not completed, OR has incomplete descendants
+                if (!task.completed) return true;
+                if (!task.subtasks || task.subtasks.length === 0) return false;
+                return task.subtasks.some(st => shouldDisplayTask(st, completionFilter));
+            }
+            
+            return true; // Default to showing
+        }
+
         async function renderTaskDetails(taskGid) {
             const task = allTasksMap.get(taskGid);
             const detailsDiv = document.getElementById('details-' + taskGid);
@@ -3308,7 +3672,11 @@
             // Render subtasks if they exist
             if (task.subtasks && task.subtasks.length > 0) {
                 const level = parseInt(detailsDiv.closest('.task-item').style.marginLeft || '0') / 40;
-                task.subtasks.forEach(subtask => {
+                // Filter subtasks based on completion filter
+                const filteredSubtasks = task.subtasks.filter(subtask => 
+                    shouldDisplayTask(subtask, filterState.completion)
+                );
+                filteredSubtasks.forEach(subtask => {
                     const subtaskElement = renderTask(subtask, level + 1);
                     detailsDiv.appendChild(subtaskElement);
                 });
@@ -4498,33 +4866,37 @@
             closeFilterModal();
 
             // Check if we need to reload from API
-            // Only reload if completion or date filters changed (these affect what data we fetch)
-            const needsAPIReload = (oldCompletion !== filterState.completion) || 
-                                   (oldDateRange !== filterState.dateRange);
+            const dateRangeChanged = oldDateRange !== filterState.dateRange;
+            const completionChanged = oldCompletion !== filterState.completion;
             
-            if (needsAPIReload) {
-                // These filters affect API queries, but we can still use incremental updates
-                // Apply filters to cached data and display immediately
-                displayTasks();
+            // Only reload from API if DATE filter changed (affects what data we fetch)
+            // Completion filter changes are applied client-side only (instant)
+            if (dateRangeChanged) {
+                // Date filter changed - check cache first
+                const cacheResult = loadCache();
                 
-                // Then do incremental background refresh to get only modified tasks
-                // Get cache timestamp for incremental update
-                const cache = loadCache();
-                const cacheTimestamp = cache?.timestamp || null;
-                
-                // Show background loading indicator
-                window.backgroundLoadingInProgress = true;
-                document.body.classList.add('background-loading');
-                showBackgroundLoadingBanner();
-                showGlobalUpdateSpinners();
-                
-                // Refresh data in background with incremental update
-                // The modified_since parameter gets us only changed tasks
-                // We'll filter them client-side according to the new criteria
-                await loadUserTasks(true, cacheTimestamp);
+                if (cacheResult) {
+                    // Cache hit with matching date filter!
+                    console.log('✅ Using cached data for date filter change');
+                    displayCachedData();
+                    showToast('Loaded from cache', 'success', 2000);
+                    
+                    // Still do background refresh to update cache
+                    setTimeout(() => refreshData(true, cacheResult.timestamp), 1000);
+                } else {
+                    // Cache miss or date filter mismatch - need full reload
+                    console.log('❌ Cache miss - reloading with new date filter');
+                    showProgress();
+                    updateProgress(0, 100, 'Loading tasks...');
+                    await loadUserTasks(false);
+                }
             } else {
-                // Just parent filter changed - re-display existing data
+                // Only completion or parent filter changed - re-display existing data (instant!)
+                if (completionChanged) {
+                    console.log('✨ Completion filter changed - applying client-side filter (instant)');
+                }
                 displayTasks();
+                showToast('Filter applied', 'success', 1000);
             }
         }
 
@@ -4543,10 +4915,24 @@
                 chips.push({
                     label: completionLabels[filterState.completion],
                     onDelete: () => {
+                        const previousFilter = filterState.completion;
                         filterState.completion = 'both';
                         saveFilterState();
                         displayTasks();
                         displayFilterBadges();
+                        
+                        // Provide feedback about the filter change
+                        const tasks = Array.from(allTasksMap.values());
+                        const completedCount = tasks.filter(t => t.completed && !t.isProject && !t.isSection && !t.isPlaceholder).length;
+                        const incompleteCount = tasks.filter(t => !t.completed && !t.isProject && !t.isSection && !t.isPlaceholder).length;
+                        
+                        if (previousFilter === 'incomplete' && completedCount === 0) {
+                            showToast('Now showing all tasks (no completed tasks found)', 'info', 3000);
+                        } else if (previousFilter === 'completed' && incompleteCount === 0) {
+                            showToast('Now showing all tasks (no incomplete tasks found)', 'info', 3000);
+                        } else {
+                            showToast(`Now showing all tasks (${incompleteCount} incomplete, ${completedCount} completed)`, 'success', 3000);
+                        }
                     }
                 });
             }
@@ -4568,6 +4954,9 @@
                         filterState.customEnd = null;
                         saveFilterState();
                         
+                        // Show loading feedback
+                        showToast('Removing date filter and reloading tasks...', 'info', 2000);
+                        
                         // Date filter affects API queries, so we need to reload
                         await loadUserTasks();
                         displayFilterBadges();
@@ -4582,11 +4971,13 @@
                     chips.push({
                         label: 'Project: ' + parent.name,
                         onDelete: () => {
+                            const parentName = parent.name;
                             filterState.parentFilter = '';
                             document.getElementById('parentFilter').value = '';
                             saveFilterState();
                             displayTasks();
                             displayFilterBadges();
+                            showToast(`Showing all projects (removed filter: ${parentName})`, 'success', 3000);
                         }
                     });
                 }
