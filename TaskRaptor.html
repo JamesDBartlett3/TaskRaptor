@@ -1228,7 +1228,11 @@
                 return null;
             }
             
-            return cacheData.data;
+            // Return both data and timestamp for incremental updates
+            return {
+                data: cacheData.data,
+                timestamp: cacheData.timestamp
+            };
         }
 
         function clearCache() {
@@ -1472,12 +1476,14 @@
                 loadFilterState();
                 
                 // Try to load from cache first
-                cachedData = loadCache();
-                if (cachedData) {
+                const cacheResult = loadCache();
+                if (cacheResult) {
+                    cachedData = cacheResult.data;
+                    const cacheTimestamp = cacheResult.timestamp;
                     showToast('Loading from cache...', 'info', 2000);
                     displayCachedData();
-                    // Refresh in background
-                    setTimeout(() => refreshData(true), 1000);
+                    // Refresh only modified tasks in background
+                    setTimeout(() => refreshData(true, cacheTimestamp), 1000);
                 } else {
                     await loadUserTasks();
                 }
@@ -1593,12 +1599,12 @@
             showGlobalUpdateSpinners();
         }
 
-        async function refreshData(background = false) {
+        async function refreshData(background = false, cacheTimestamp = null) {
             if (!background) {
                 clearCache();
                 showProgress();
             }
-            await loadUserTasks(background);
+            await loadUserTasks(background, cacheTimestamp);
         }
 
         function collapseSingleChildChains() {
@@ -1861,8 +1867,9 @@
         }
 
         // Fetch all tasks with pagination
-        async function loadUserTasks(background = false) {
+        async function loadUserTasks(background = false, cacheTimestamp = null) {
             console.log('🚀 loadUserTasks STARTING - Code version: 2025-12-09-v2');
+            console.log('Background mode:', background, '| Cache timestamp:', cacheTimestamp ? new Date(cacheTimestamp).toISOString() : 'none');
             try {
                 if (!background) showProgress();
                 
@@ -1878,25 +1885,33 @@
                 // Include memberships to get project/section hierarchy
                 let apiUrl = `https://app.asana.com/api/1.0/tasks?assignee=${currentUserId}&workspace=${WORKSPACE_ID}&opt_fields=name,completed,assignee,due_on,modified_at,parent,parent.name,notes,html_notes,memberships,memberships.project,memberships.project.name,memberships.section,memberships.section.name`;
                 
-                // Add API-level filters based on completion status and date range
-                const dateFilter = getDateFilter();
-                
-                if (filterState.completion === 'completed') {
-                    // For completed tasks, use completed_since (API-supported parameter)
-                    if (dateFilter) {
-                        apiUrl += `&completed_since=${dateFilter}`;
-                    }
-                    // Note: Without completed_since, API returns ALL tasks, so we need date filter
-                    // We'll filter by completion status client-side
-                } else if (filterState.completion === 'incomplete') {
-                    // For incomplete tasks only: Use completed_since with far-future date
-                    // This exploits the fact that completed_since returns ALL incomplete tasks
-                    // plus completed tasks after the date. A future date means zero completed tasks.
-                    apiUrl += '&completed_since=2099-01-01T00:00:00.000Z';
+                // For incremental updates, only fetch tasks modified since cache timestamp
+                // Skip completion filters to catch ALL status changes (incomplete→complete, complete→incomplete)
+                if (background && cacheTimestamp) {
+                    const modifiedSince = new Date(cacheTimestamp).toISOString();
+                    apiUrl += `&modified_since=${modifiedSince}`;
+                    console.log('✨ Incremental update: fetching ALL tasks modified since', modifiedSince, '(ignoring filter for completeness)');
                 } else {
-                    // For 'both' mode, use modified_since if date filter is set
-                    if (dateFilter && filterState.dateRange !== 'all') {
-                        apiUrl += `&modified_since=${dateFilter}`;
+                    // For full loads, add API-level filters based on completion status and date range
+                    const dateFilter = getDateFilter();
+                    
+                    if (filterState.completion === 'completed') {
+                        // For completed tasks, use completed_since (API-supported parameter)
+                        if (dateFilter) {
+                            apiUrl += `&completed_since=${dateFilter}`;
+                        }
+                        // Note: Without completed_since, API returns ALL tasks, so we need date filter
+                        // We'll filter by completion status client-side
+                    } else if (filterState.completion === 'incomplete') {
+                        // For incomplete tasks only: Use completed_since with far-future date
+                        // This exploits the fact that completed_since returns ALL incomplete tasks
+                        // plus completed tasks after the date. A future date means zero completed tasks.
+                        apiUrl += '&completed_since=2099-01-01T00:00:00.000Z';
+                    } else {
+                        // For 'both' mode, use modified_since if date filter is set
+                        if (dateFilter && filterState.dateRange !== 'all') {
+                            apiUrl += `&modified_since=${dateFilter}`;
+                        }
                     }
                 }
 
@@ -1975,6 +1990,8 @@
                     filteredTasks.forEach(task => allTasksMap.set(task.gid, task));
                 } else {
                     // During background loading, UPDATE existing tasks instead of replacing them
+                    let updatedCount = 0;
+                    let newCount = 0;
                     filteredTasks.forEach(task => {
                         const existingTask = allTasksMap.get(task.gid);
                         if (existingTask) {
@@ -1989,26 +2006,39 @@
                             existingTask.html_notes = task.html_notes;
                             existingTask.memberships = task.memberships;
                             // Keep existing: comments, notesExpanded, commentsShown, subtasks, subtasksLoaded
+                            updatedCount++;
                         } else {
                             // New task, add it
                             allTasksMap.set(task.gid, task);
+                            newCount++;
                         }
                     });
+                    console.log(`📥 Merged: ${updatedCount} updated, ${newCount} new tasks. Total in cache: ${allTasksMap.size}`);
                 }
 
                 // Create placeholder items for missing parents (projects/sections)
                 await createMissingParentItems();
 
-                // Load subtasks for all filtered tasks - this will add more tasks to allTasksMap
+                // Load subtasks for filtered tasks
+                // In incremental mode (background with cacheTimestamp), only load subtasks for new/modified tasks
                 setProgress(40, 'Loading subtasks...');
-                for (let i = 0; i < filteredTasks.length; i++) {
-                    tasksBeingLoaded.add(filteredTasks[i].gid); // Mark as loading
+                const tasksNeedingSubtasks = background && cacheTimestamp 
+                    ? filteredTasks.filter(t => {
+                        const existing = allTasksMap.get(t.gid);
+                        return !existing || !existing.subtasksLoaded;
+                    })
+                    : filteredTasks;
+                
+                console.log(`Loading subtasks for ${tasksNeedingSubtasks.length} tasks (${filteredTasks.length - tasksNeedingSubtasks.length} already cached)`);
+                
+                for (let i = 0; i < tasksNeedingSubtasks.length; i++) {
+                    tasksBeingLoaded.add(tasksNeedingSubtasks[i].gid); // Mark as loading
                     const isAssignedToUser = true; // all filteredTasks are assigned to user
-                    await loadSubtasksFiltered(filteredTasks[i].gid, isAssignedToUser);
-                    tasksBeingLoaded.delete(filteredTasks[i].gid); // Mark as loaded
-                    if (i % 5 === 0 || i === filteredTasks.length - 1) {
-                        const subtaskProgress = 40 + ((i / filteredTasks.length) * 30);
-                        setProgress(subtaskProgress, `Loading subtasks: ${i + 1}/${filteredTasks.length}`);
+                    await loadSubtasksFiltered(tasksNeedingSubtasks[i].gid, isAssignedToUser);
+                    tasksBeingLoaded.delete(tasksNeedingSubtasks[i].gid); // Mark as loaded
+                    if (i % 5 === 0 || i === tasksNeedingSubtasks.length - 1) {
+                        const subtaskProgress = 40 + ((i / Math.max(tasksNeedingSubtasks.length, 1)) * 30);
+                        setProgress(subtaskProgress, `Loading subtasks: ${i + 1}/${tasksNeedingSubtasks.length}`);
                     }
                 }
 
@@ -2265,7 +2295,25 @@
                 // Store refresh timestamp
                 window.lastRefreshTime = new Date();
                 
-                showToast(`Loaded ${filteredTasks.length} tasks successfully`, 'success', 2000);
+                // Show appropriate success message and log summary
+                if (background && cacheTimestamp) {
+                    const unchangedCount = allTasksMap.size - filteredTasks.length;
+                    console.log(`🎯 Incremental update complete:`);
+                    console.log(`   - ${filteredTasks.length} tasks fetched from API (modified since cache)`);
+                    console.log(`   - ${unchangedCount} tasks used from cache (unchanged)`);
+                    console.log(`   - ${allTasksMap.size} total tasks available`);
+                    console.log(`   - Performance: Saved ${unchangedCount} task fetches + subtask API calls!`);
+                    
+                    if (filteredTasks.length === 0) {
+                        showToast(`✨ No tasks modified since last refresh. Cache is up to date.`, 'success', 3000);
+                    } else if (filteredTasks.length === 1) {
+                        showToast(`✨ 1 task modified since last refresh. Cache updated.`, 'success', 3000);
+                    } else {
+                        showToast(`✨ ${filteredTasks.length} tasks modified since last refresh. Cache updated.`, 'success', 3000);
+                    }
+                } else {
+                    showToast(`Loaded ${filteredTasks.length} tasks successfully`, 'success', 2000);
+                }
                 
                 if (!background) {
                     hideProgress();
@@ -4455,9 +4503,25 @@
                                    (oldDateRange !== filterState.dateRange);
             
             if (needsAPIReload) {
-                // These filters affect API queries, so we need to reload
-                clearCache();
-                await loadUserTasks();
+                // These filters affect API queries, but we can still use incremental updates
+                // Apply filters to cached data and display immediately
+                displayTasks();
+                
+                // Then do incremental background refresh to get only modified tasks
+                // Get cache timestamp for incremental update
+                const cache = loadCache();
+                const cacheTimestamp = cache?.timestamp || null;
+                
+                // Show background loading indicator
+                window.backgroundLoadingInProgress = true;
+                document.body.classList.add('background-loading');
+                showBackgroundLoadingBanner();
+                showGlobalUpdateSpinners();
+                
+                // Refresh data in background with incremental update
+                // The modified_since parameter gets us only changed tasks
+                // We'll filter them client-side according to the new criteria
+                await loadUserTasks(true, cacheTimestamp);
             } else {
                 // Just parent filter changed - re-display existing data
                 displayTasks();
