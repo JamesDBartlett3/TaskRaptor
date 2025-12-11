@@ -811,7 +811,7 @@
                 </div>
                 <div class="controls-right">
                     <button onclick="refreshData()" title="Refresh"><span class="btn-icon">🔄</span><span class="btn-text"> Refresh</span></button>
-                    <button onclick="localStorage.clear(); location.reload();" title="Clear Cache & Reload" style="background: #dc3545;"><span class="btn-icon">🗑️</span><span class="btn-text"> Clear Cache</span></button>
+                    <button id="clearCacheBtn" onclick="localStorage.clear(); location.reload();" title="Clear Cache & Reload" style="background: #dc3545; display: none;"><span class="btn-icon">🗑️</span><span class="btn-text"> Clear Cache</span></button>
                     <button onclick="logout()" title="Logout"><span class="btn-icon">🚪</span><span class="btn-text"> Logout</span></button>
                 </div>
             </div>
@@ -920,6 +920,16 @@
     </div>
 
     <script>
+        // Debug mode: Check for ?debug URL parameter
+        const isDebugMode = new URLSearchParams(window.location.search).has('debug');
+        
+        // Custom logging function that only logs when debug mode is enabled
+        function debugLog(...args) {
+            if (isDebugMode) {
+                console.log(...args);
+            }
+        }
+        
         let WORKSPACE_ID = null;
         let personalAccessToken = '';
         let currentUserId = '';
@@ -951,9 +961,9 @@
                     filterState.completion = 'incomplete';
                     saveFilterState(); // Save the migrated value
                 }
-                console.log('Loaded filter state from localStorage:', filterState);
+                debugLog('Loaded filter state from localStorage:', filterState);
             } else {
-                console.log('No saved filter state, using defaults:', filterState);
+                debugLog('No saved filter state, using defaults:', filterState);
             }
         }
 
@@ -1232,7 +1242,7 @@
                 };
                 
                 localStorage.setItem('taskraptor_cache', JSON.stringify(cacheData));
-                console.log(`💾 Saved unified cache with ${data.allTasksMap.length} tasks (broadest scope: ${broadestScope}, current filter: ${currentScope})`);
+                debugLog(`💾 Saved unified cache with ${data.allTasksMap.length} tasks (broadest scope: ${broadestScope}, current filter: ${currentScope})`);
             } catch (error) {
                 console.error('Failed to save cache:', error);
                 if (error.name === 'QuotaExceededError') {
@@ -1256,7 +1266,7 @@
             // Check if cache is valid (< 24 hours old)
             const ageHours = (Date.now() - cacheData.timestamp) / (1000 * 60 * 60);
             if (ageHours > 24) {
-                console.log('❌ Cache expired (age: ' + ageHours.toFixed(1) + ' hours)');
+                debugLog('❌ Cache expired (age: ' + ageHours.toFixed(1) + ' hours)');
                 return null;
             }
             
@@ -1271,11 +1281,11 @@
             
             // Cache is valid if it has broader or equal scope
             if (cachedScopeIndex > requestedScopeIndex) {
-                console.log(`⚠️ Cache scope (${cachedBroadestScope}) is narrower than requested (${requestedScope}) - need fresh data`);
+                debugLog(`⚠️ Cache scope (${cachedBroadestScope}) is narrower than requested (${requestedScope}) - need fresh data`);
                 return null;
             }
             
-            console.log(`📦 Loading from cache (cached scope: ${cachedBroadestScope} encompasses requested: ${requestedScope})`);
+            debugLog(`📦 Loading from cache (cached scope: ${cachedBroadestScope} encompasses requested: ${requestedScope})`);
             return {
                 data: cacheData.data,
                 timestamp: cacheData.timestamp,
@@ -1288,7 +1298,7 @@
             if (!cacheType) {
                 // Clear all caches
                 localStorage.removeItem('taskraptor_cache');
-                console.log('🗑️ Cleared all caches');
+                debugLog('🗑️ Cleared all caches');
             } else {
                 // Clear specific cache
                 const cached = localStorage.getItem('taskraptor_cache');
@@ -1300,7 +1310,7 @@
                     } else {
                         localStorage.setItem('taskraptor_cache', JSON.stringify(fullCache));
                     }
-                    console.log(`🗑️ Cleared ${cacheType} cache`);
+                    debugLog(`🗑️ Cleared ${cacheType} cache`);
                 }
             }
         }
@@ -1648,7 +1658,7 @@
             });
             
             if (dedupedRootItems.length !== rootItems.length) {
-                console.log(`Cache had ${rootItems.length - dedupedRootItems.length} duplicates, now ${dedupedRootItems.length} unique items`);
+                debugLog(`Cache had ${rootItems.length - dedupedRootItems.length} duplicates, now ${dedupedRootItems.length} unique items`);
                 rootItems = dedupedRootItems;
             }
             
@@ -1700,13 +1710,54 @@
                         name: item.name
                     }));
                     newRootItems.push(leaf);
-                    console.log(`Collapsed chain: ${chainItems.map(i => i.name).join(' → ')}`);
+                    debugLog(`Collapsed chain: ${chainItems.map(i => i.name).join(' → ')}`);
                 } else {
                     newRootItems.push(rootItem);
                 }
             });
             
             rootItems = newRootItems;
+        }
+
+        function collapseSingleChildChainsInArray(tasks) {
+            // Helper function to apply collapse logic to any array of tasks
+            // (used after filtering to clean up single-child containers)
+            const newTasks = [];
+            
+            tasks.forEach(rootItem => {
+                let current = rootItem;
+                const chainItems = [current];
+                
+                // Walk down the chain as long as there's only one child
+                while (current.subtasks && current.subtasks.length === 1) {
+                    const onlyChild = current.subtasks[0];
+                    chainItems.push(onlyChild);
+                    current = onlyChild;
+                }
+                
+                // If we walked down a chain (more than 1 item), use the leaf as the root
+                if (chainItems.length > 1) {
+                    const leaf = chainItems[chainItems.length - 1];
+                    
+                    // Start with the root item's existing collapsed parent chain
+                    const existingChain = rootItem.collapsedParentChain || [];
+                    
+                    // Add the new chain items (excluding the leaf itself)
+                    const newChainPart = chainItems.slice(0, -1).map(item => ({
+                        gid: item.gid,
+                        name: item.name
+                    }));
+                    
+                    // Combine: existing chain + new collapsed items
+                    leaf.collapsedParentChain = [...existingChain, ...newChainPart];
+                    newTasks.push(leaf);
+                } else {
+                    // No collapse needed, just use the item as-is
+                    newTasks.push(rootItem);
+                }
+            });
+            
+            return newTasks;
         }
 
         async function createMissingParentItems() {
@@ -1721,11 +1772,11 @@
                 }
                 // Debug: Check for "Unknown Parent" names
                 if (task.name && task.name.includes('Unknown')) {
-                    console.log(`Found task with Unknown in name: "${task.name}" (GID: ${task.gid})`);
+                    debugLog(`Found task with Unknown in name: "${task.name}" (GID: ${task.gid})`);
                 }
             });
             
-            console.log(`Found ${existingGids.size} existing tasks and ${referencedParents.size} referenced parents`);
+            debugLog(`Found ${existingGids.size} existing tasks and ${referencedParents.size} referenced parents`);
             
             // Fix any tasks that exist with "Unknown Parent" name but have better names in references
             referencedParents.forEach(parentGid => {
@@ -1737,7 +1788,7 @@
                         // Look for any task that references this parent and use its parent.name
                         allTasksMap.forEach(task => {
                             if (task.parent && task.parent.gid === parentGid && task.parent.name) {
-                                console.log(`Updating "${parentTask.name}" (${parentGid}) to "${task.parent.name}" from reference`);
+                                debugLog(`Updating "${parentTask.name}" (${parentGid}) to "${task.parent.name}" from reference`);
                                 parentTask.name = task.parent.name;
                             }
                         });
@@ -1745,14 +1796,14 @@
                     
                     // Also try to add project hierarchy if this parent has no parent but its children have memberships
                     if (!parentTask.parent) {
-                        console.log(`Checking children of "${parentTask.name}" (${parentGid}) for membership info...`);
+                        debugLog(`Checking children of "${parentTask.name}" (${parentGid}) for membership info...`);
                         allTasksMap.forEach(childTask => {
                             if (childTask.parent && childTask.parent.gid === parentGid) {
-                                console.log(`  Child "${childTask.name}" has memberships:`, childTask.memberships);
+                                debugLog(`  Child "${childTask.name}" has memberships:`, childTask.memberships);
                                 if (childTask.memberships && childTask.memberships.length > 0) {
                                     const membership = childTask.memberships[0];
-                                    console.log(`    Section GID: ${membership.section?.gid}, Parent GID: ${parentGid}, Match: ${membership.section?.gid === parentGid}`);
-                                    console.log(`    Project: ${membership.project?.name} (${membership.project?.gid})`);
+                                    debugLog(`    Section GID: ${membership.section?.gid}, Parent GID: ${parentGid}, Match: ${membership.section?.gid === parentGid}`);
+                                    debugLog(`    Project: ${membership.project?.name} (${membership.project?.gid})`);
                                     
                                     // If the parent matches a section, link it to the project
                                     if (membership.section && membership.section.gid === parentGid && membership.project) {
@@ -1761,7 +1812,7 @@
                                             name: membership.project.name
                                         };
                                         parentTask.isSection = true;
-                                        console.log(`✓ Linked "${parentTask.name}" to project "${membership.project.name}"`);
+                                        debugLog(`✓ Linked "${parentTask.name}" to project "${membership.project.name}"`);
                                     }
                                 }
                             }
@@ -1775,16 +1826,16 @@
             for (const task of tasksToProcess) {
                 // If task has a parent that doesn't exist as a task, create it
                 if (task.parent && task.parent.gid && !existingGids.has(task.parent.gid)) {
-                    console.log(`Creating missing parent for task "${task.name}": parent GID=${task.parent.gid}, parent name="${task.parent.name}"`);
+                    debugLog(`Creating missing parent for task "${task.name}": parent GID=${task.parent.gid}, parent name="${task.parent.name}"`);
                     
                     // Check memberships to get proper name and hierarchy
                     if (task.memberships && task.memberships.length > 0) {
                         const membership = task.memberships[0];
-                        console.log(`  Has memberships: section=${membership.section?.gid}, project=${membership.project?.gid}`);
+                        debugLog(`  Has memberships: section=${membership.section?.gid}, project=${membership.project?.gid}`);
                         
                         // Check if this is a section
                         if (membership.section && membership.section.gid === task.parent.gid) {
-                            console.log(`  Parent IS the section: ${membership.section.name}`);
+                            debugLog(`  Parent IS the section: ${membership.section.name}`);
                             const sectionItem = {
                                 gid: membership.section.gid,
                                 name: membership.section.name,
@@ -1804,7 +1855,7 @@
                             
                             allTasksMap.set(sectionItem.gid, sectionItem);
                             existingGids.add(sectionItem.gid);
-                            console.log(`Created section item: ${sectionItem.name}`);
+                            debugLog(`Created section item: ${sectionItem.name}`);
                             
                             // Also create project if needed
                             if (membership.project && !existingGids.has(membership.project.gid)) {
@@ -1818,13 +1869,13 @@
                                 };
                                 allTasksMap.set(projectItem.gid, projectItem);
                                 existingGids.add(projectItem.gid);
-                                console.log(`Created project item: ${projectItem.name}`);
+                                debugLog(`Created project item: ${projectItem.name}`);
                             }
                         } else {
                             // Parent exists but is not the section - create as regular parent task placeholder
                             let parentName = task.parent.name;
                             
-                            console.log(`Non-section parent for task "${task.name}": GID=${task.parent.gid}, name="${parentName}"`);
+                            debugLog(`Non-section parent for task "${task.name}": GID=${task.parent.gid}, name="${parentName}"`);
                             
                             // If no parent name, try to fetch from API
                             if (!parentName) {
@@ -1875,7 +1926,7 @@
                         };
                         allTasksMap.set(placeholderItem.gid, placeholderItem);
                         existingGids.add(placeholderItem.gid);
-                        console.log(`Created placeholder item: ${placeholderItem.name} (GID: ${placeholderItem.gid})`);
+                        debugLog(`Created placeholder item: ${placeholderItem.name} (GID: ${placeholderItem.gid})`);
                     }
                 } else if (!task.parent && task.memberships && task.memberships.length > 0) {
                     // Task has no parent but has memberships - create project/section hierarchy
@@ -1893,7 +1944,7 @@
                         };
                         allTasksMap.set(projectItem.gid, projectItem);
                         existingGids.add(projectItem.gid);
-                        console.log(`Created project item: ${projectItem.name}`);
+                        debugLog(`Created project item: ${projectItem.name}`);
                     }
                     
                     // Create section if needed
@@ -1911,7 +1962,7 @@
                         };
                         allTasksMap.set(sectionItem.gid, sectionItem);
                         existingGids.add(sectionItem.gid);
-                        console.log(`Created section item: ${sectionItem.name}`);
+                        debugLog(`Created section item: ${sectionItem.name}`);
                     }
                     
                     // Link task to section or project
@@ -1920,24 +1971,24 @@
                             gid: membership.section.gid,
                             name: membership.section.name
                         };
-                        console.log(`Linked task "${task.name}" to section "${membership.section.name}"`);
+                        debugLog(`Linked task "${task.name}" to section "${membership.section.name}"`);
                     } else if (membership.project) {
                         task.parent = {
                             gid: membership.project.gid,
                             name: membership.project.name
                         };
-                        console.log(`Linked task "${task.name}" to project "${membership.project.name}"`);
+                        debugLog(`Linked task "${task.name}" to project "${membership.project.name}"`);
                     }
                 }
             }
             
-            console.log(`After creating missing parents: ${allTasksMap.size} total items`);
+            debugLog(`After creating missing parents: ${allTasksMap.size} total items`);
         }
 
         // Fetch all tasks with pagination
         async function loadUserTasks(background = false, cacheTimestamp = null) {
-            console.log('🚀 loadUserTasks STARTING - Code version: 2025-12-09-v2');
-            console.log('Background mode:', background, '| Cache timestamp:', cacheTimestamp ? new Date(cacheTimestamp).toISOString() : 'none');
+            debugLog('🚀 loadUserTasks STARTING - Code version: 2025-12-09-v2');
+            debugLog('Background mode:', background, '| Cache timestamp:', cacheTimestamp ? new Date(cacheTimestamp).toISOString() : 'none');
             try {
                 if (!background) showProgress();
                 
@@ -1958,12 +2009,12 @@
                 if (background && cacheTimestamp) {
                     const modifiedSince = new Date(cacheTimestamp).toISOString();
                     apiUrl += `&modified_since=${modifiedSince}`;
-                    console.log('✨ Incremental update: fetching tasks modified since', modifiedSince);
+                    debugLog('✨ Incremental update: fetching tasks modified since', modifiedSince);
                 } else {
                     // For initial loads, NEVER apply date filtering at API level
                     // This ensures cache contains ALL tasks, allowing filter changes without API calls
                     // when switching from broader to narrower scopes (e.g., 'all' → 'last30')
-                    console.log('📅 Initial load: fetching ALL tasks (no date filtering at API level)');
+                    debugLog('📅 Initial load: fetching ALL tasks (no date filtering at API level)');
                 }
 
                 const allTasks = [];
@@ -1995,11 +2046,11 @@
                 const tasksWithoutParent = allTasks.filter(t => !t.parent).length;
                 const completedCount = allTasks.filter(t => t.completed).length;
                 const incompleteCount = allTasks.filter(t => !t.completed).length;
-                console.log(`📊 API returned ${allTasks.length} tasks:`);
-                console.log(`   - ${tasksWithoutParent} top-level tasks (no parent)`);
-                console.log(`   - ${tasksWithParent} subtasks (have parent)`);
-                console.log(`   - ${completedCount} completed, ${incompleteCount} incomplete`);
-                console.log(`   - Sample of first 10:`, allTasks.slice(0, 10).map(t => ({
+                debugLog(`📊 API returned ${allTasks.length} tasks:`);
+                debugLog(`   - ${tasksWithoutParent} top-level tasks (no parent)`);
+                debugLog(`   - ${tasksWithParent} subtasks (have parent)`);
+                debugLog(`   - ${completedCount} completed, ${incompleteCount} incomplete`);
+                debugLog(`   - Sample of first 10:`, allTasks.slice(0, 10).map(t => ({
                     name: t.name,
                     completed: t.completed,
                     hasParent: !!t.parent,
@@ -2010,8 +2061,8 @@
                 // The cache should contain ALL tasks (completed + incomplete)
                 // Both completion AND date filtering happen client-side in displayTasks()
                 // This allows instant switching between ALL filter types without API calls
-                console.log(`Keeping all ${allTasks.length} tasks in cache (${completedCount} completed, ${incompleteCount} incomplete)`);
-                console.log('All filtering (completion, date, parent) will be applied client-side when displaying tasks');
+                debugLog(`Keeping all ${allTasks.length} tasks in cache (${completedCount} completed, ${incompleteCount} incomplete)`);
+                debugLog('All filtering (completion, date, parent) will be applied client-side when displaying tasks');
 
                 // Initialize task structure (NO FILTERING - all tasks go into cache)
                 const tasksToCache = allTasks.map(task => {
@@ -2021,8 +2072,8 @@
                     task.subtasksLoaded = false; // Mark as not loaded yet
                     return task;
                 });
-                console.log(`Prepared ${tasksToCache.length} unfiltered tasks for caching`);
-                console.log('Sample tasks:', tasksToCache.slice(0, 3).map(t => ({name: t.name, completed: t.completed, hasParent: !!t.parent})));
+                debugLog(`Prepared ${tasksToCache.length} unfiltered tasks for caching`);
+                debugLog('Sample tasks:', tasksToCache.slice(0, 3).map(t => ({name: t.name, completed: t.completed, hasParent: !!t.parent})));
 
                 // If background loading, preserve existing tasks and merge new data
                 // Otherwise, clear and rebuild
@@ -2054,7 +2105,7 @@
                             newCount++;
                         }
                     });
-                    console.log(`📥 Merged: ${updatedCount} updated, ${newCount} new tasks. Total in cache: ${allTasksMap.size}`);
+                    debugLog(`📥 Merged: ${updatedCount} updated, ${newCount} new tasks. Total in cache: ${allTasksMap.size}`);
                 }
 
                 // Create placeholder items for missing parents (projects/sections)
@@ -2070,7 +2121,7 @@
                     })
                     : tasksToCache;
                 
-                console.log(`Loading subtasks for ${tasksNeedingSubtasks.length} tasks (${tasksToCache.length - tasksNeedingSubtasks.length} already cached)`);
+                debugLog(`Loading subtasks for ${tasksNeedingSubtasks.length} tasks (${tasksToCache.length - tasksNeedingSubtasks.length} already cached)`);
                 
                 for (let i = 0; i < tasksNeedingSubtasks.length; i++) {
                     tasksBeingLoaded.add(tasksNeedingSubtasks[i].gid); // Mark as loading
@@ -2117,7 +2168,7 @@
 
                 // Iterate through ALL tasks in allTasksMap to find their true roots
                 const allTasksArray = Array.from(allTasksMap.values());
-                console.log(`Building hierarchy from ${allTasksArray.length} total tasks (including subtasks)`);
+                debugLog(`Building hierarchy from ${allTasksArray.length} total tasks (including subtasks)`);
                 
                 for (let i = 0; i < allTasksArray.length; i++) {
                     const task = allTasksArray[i];
@@ -2130,15 +2181,15 @@
                     trueRootMap.set(task.gid, trueRoot.gid);
                     
                     if (i < 5) {
-                        console.log(`Task ${i}: "${task.name}" (GID: ${task.gid})`);
-                        console.log(`  Has parent: ${task.parent ? 'yes (' + task.parent.gid + ')' : 'no'}`);
-                        console.log(`  Parent object:`, task.parent);
-                        console.log(`  Parent chain length: ${parentChain.length}`);
+                        debugLog(`Task ${i}: "${task.name}" (GID: ${task.gid})`);
+                        debugLog(`  Has parent: ${task.parent ? 'yes (' + task.parent.gid + ')' : 'no'}`);
+                        debugLog(`  Parent object:`, task.parent);
+                        debugLog(`  Parent chain length: ${parentChain.length}`);
                         if (parentChain.length > 0) {
-                            console.log(`  Parent chain:`, parentChain.map(p => p.name).join(' → '));
+                            debugLog(`  Parent chain:`, parentChain.map(p => p.name).join(' → '));
                         }
-                        console.log(`  True root: "${trueRoot.name}" (${trueRoot.gid})`);
-                        console.log(`  Subtasks: ${task.subtasks ? task.subtasks.length : 0}`);
+                        debugLog(`  True root: "${trueRoot.name}" (${trueRoot.gid})`);
+                        debugLog(`  Subtasks: ${task.subtasks ? task.subtasks.length : 0}`);
                     }
                     
                     // Add true root to rootItems if not already added
@@ -2147,7 +2198,7 @@
                         rootGids.add(trueRoot.gid);
                         
                         if (rootItems.length <= 5) {
-                            console.log(`✓ Added root #${rootItems.length}: "${trueRoot.name}" (${trueRoot.gid})`);
+                            debugLog(`✓ Added root #${rootItems.length}: "${trueRoot.name}" (${trueRoot.gid})`);
                         }
                         
                         // Add to parent filter options
@@ -2163,9 +2214,9 @@
                     }
                 }
                 
-                console.log(`Total root items found: ${rootItems.length}`);
-                console.log(`rootGids size: ${rootGids.size}`);
-                console.log(`allTasksMap size: ${allTasksMap.size}`);
+                debugLog(`Total root items found: ${rootItems.length}`);
+                debugLog(`rootGids size: ${rootGids.size}`);
+                debugLog(`allTasksMap size: ${allTasksMap.size}`);
                 
                 // Check for duplicates
                 const uniqueGids = new Set(rootItems.map(t => t.gid));
@@ -2175,29 +2226,29 @@
                     const seen = new Set();
                     rootItems = rootItems.filter(task => {
                         if (seen.has(task.gid)) {
-                            console.log(`  Removing duplicate: ${task.name} (${task.gid})`);
+                            debugLog(`  Removing duplicate: ${task.name} (${task.gid})`);
                             return false;
                         }
                         seen.add(task.gid);
                         return true;
                     });
-                    console.log(`After deduplication: ${rootItems.length} root items`);
+                    debugLog(`After deduplication: ${rootItems.length} root items`);
                 }
                 
                 // Fetch missing ancestors for each root item
                 setProgress(91, 'Checking for missing ancestors...');
-                console.log(`Checking ${rootItems.length} root items for missing ancestors...`);
+                debugLog(`Checking ${rootItems.length} root items for missing ancestors...`);
                 
                 for (let i = 0; i < rootItems.length; i++) {
                     const root = rootItems[i];
                     
                     // Debug: Log each root's parent status
-                    console.log(`Root #${i + 1}: "${root.name}" (${root.gid})`);
-                    console.log(`  Has parent field: ${root.parent ? 'yes' : 'no'}`);
+                    debugLog(`Root #${i + 1}: "${root.name}" (${root.gid})`);
+                    debugLog(`  Has parent field: ${root.parent ? 'yes' : 'no'}`);
                     
                     // If root has no parent field at all, try fetching it directly to see if Asana has parent info
                     if (!root.parent && !root.isProject && !root.isSection) {
-                        console.log(`  Root has no parent field, fetching directly from API...`);
+                        debugLog(`  Root has no parent field, fetching directly from API...`);
                         try {
                             const fetchedRoot = await fetch(`https://app.asana.com/api/1.0/tasks/${root.gid}?opt_fields=parent,parent.name,memberships,memberships.project,memberships.project.name,memberships.section,memberships.section.name`, {
                                 headers: { 'Authorization': `Bearer ${personalAccessToken}` }
@@ -2206,19 +2257,19 @@
                             if (fetchedRoot.ok) {
                                 const data = await fetchedRoot.json();
                                 if (data.data.parent) {
-                                    console.log(`  ✓ Found parent via API: "${data.data.parent.name}" (${data.data.parent.gid})`);
+                                    debugLog(`  ✓ Found parent via API: "${data.data.parent.name}" (${data.data.parent.gid})`);
                                     root.parent = data.data.parent;
                                 } else {
-                                    console.log(`  No parent field, checking memberships...`);
+                                    debugLog(`  No parent field, checking memberships...`);
                                     // Update root's memberships if we got them
                                     if (data.data.memberships) {
                                         root.memberships = data.data.memberships;
-                                        console.log(`  Updated memberships:`, data.data.memberships);
+                                        debugLog(`  Updated memberships:`, data.data.memberships);
                                         
                                         // If task belongs to a section, create parent link to that section
                                         if (data.data.memberships.length > 0 && data.data.memberships[0].section) {
                                             const section = data.data.memberships[0].section;
-                                            console.log(`  ✓ Task belongs to section: "${section.name}" (${section.gid})`);
+                                            debugLog(`  ✓ Task belongs to section: "${section.name}" (${section.gid})`);
                                             
                                             // Check if section exists in map, if not create it
                                             if (!allTasksMap.has(section.gid)) {
@@ -2232,7 +2283,7 @@
                                                     parent: project ? {gid: project.gid, name: project.name} : null
                                                 };
                                                 allTasksMap.set(section.gid, sectionItem);
-                                                console.log(`  Created section placeholder: "${section.name}"`);
+                                                debugLog(`  Created section placeholder: "${section.name}"`);
                                                 
                                                 // Create project if needed
                                                 if (project && !allTasksMap.has(project.gid)) {
@@ -2245,7 +2296,7 @@
                                                         parent: null
                                                     };
                                                     allTasksMap.set(project.gid, projectItem);
-                                                    console.log(`  Created project placeholder: "${project.name}"`);
+                                                    debugLog(`  Created project placeholder: "${project.name}"`);
                                                 }
                                             }
                                             
@@ -2261,13 +2312,13 @@
                     }
                     
                     if (root.parent) {
-                        console.log(`  Parent: "${root.parent.name}" (${root.parent.gid})`);
-                        console.log(`  Parent exists in map: ${allTasksMap.has(root.parent.gid)}`);
+                        debugLog(`  Parent: "${root.parent.name}" (${root.parent.gid})`);
+                        debugLog(`  Parent exists in map: ${allTasksMap.has(root.parent.gid)}`);
                     }
                     
                     // Check if this root has a parent that's not in the map
                     if (root.parent && root.parent.gid && !allTasksMap.has(root.parent.gid)) {
-                        console.log(`Root "${root.name}" has missing parent: ${root.parent.name} (${root.parent.gid})`);
+                        debugLog(`Root "${root.name}" has missing parent: ${root.parent.name} (${root.parent.gid})`);
                         
                         // Fetch the entire ancestor chain
                         await fetchMissingAncestors(root.parent.gid);
@@ -2277,7 +2328,7 @@
                         const newRoot = parentChain.length > 0 ? parentChain[0] : root;
                         
                         if (newRoot.gid !== root.gid) {
-                            console.log(`  Replacing root "${root.name}" with "${newRoot.name}"`);
+                            debugLog(`  Replacing root "${root.name}" with "${newRoot.name}"`);
                             rootItems[i] = newRoot;
                             rootGids.delete(root.gid);
                             rootGids.add(newRoot.gid);
@@ -2306,11 +2357,11 @@
                     return true;
                 });
                 
-                console.log(`After ancestor fetch: ${rootItems.length} root items`);
+                debugLog(`After ancestor fetch: ${rootItems.length} root items`);
                 
                 // Collapse single-child chains into breadcrumbs
                 collapseSingleChildChains();
-                console.log(`After collapsing single-child chains: ${rootItems.length} root items`);
+                debugLog(`After collapsing single-child chains: ${rootItems.length} root items`);
                 
                 setProgress(90, 'Finalizing...');
 
@@ -2341,11 +2392,11 @@
                 // Show appropriate success message and log summary
                 if (background && cacheTimestamp) {
                     const unchangedCount = allTasksMap.size - tasksToCache.length;
-                    console.log(`🎯 Incremental update complete:`);
-                    console.log(`   - ${tasksToCache.length} tasks fetched from API (modified since cache)`);
-                    console.log(`   - ${unchangedCount} tasks used from cache (unchanged)`);
-                    console.log(`   - ${allTasksMap.size} total tasks available`);
-                    console.log(`   - Performance: Saved ${unchangedCount} task fetches + subtask API calls!`);
+                    debugLog(`🎯 Incremental update complete:`);
+                    debugLog(`   - ${tasksToCache.length} tasks fetched from API (modified since cache)`);
+                    debugLog(`   - ${unchangedCount} tasks used from cache (unchanged)`);
+                    debugLog(`   - ${allTasksMap.size} total tasks available`);
+                    debugLog(`   - Performance: Saved ${unchangedCount} task fetches + subtask API calls!`);
                     
                     if (tasksToCache.length === 0) {
                         showToast(`✨ No tasks modified since last refresh. Cache is up to date.`, 'success', 3000);
@@ -2416,18 +2467,18 @@
             // This allows switching between date ranges without API calls
             
             if (filterState.dateRange === 'all') {
-                console.log(`📅 Date filter: 'all' - showing all ${tasks.length} tasks`);
+                debugLog(`📅 Date filter: 'all' - showing all ${tasks.length} tasks`);
                 return tasks;
             }
 
             const dateFilter = getDateFilter();
             if (!dateFilter) {
-                console.log(`📅 Date filter: no filter date calculated - showing all ${tasks.length} tasks`);
+                debugLog(`📅 Date filter: no filter date calculated - showing all ${tasks.length} tasks`);
                 return tasks;
             }
 
             const filterTime = new Date(dateFilter).getTime();
-            console.log(`📅 Date filter: ${filterState.dateRange} (cutoff: ${new Date(filterTime).toLocaleDateString()})`);
+            debugLog(`📅 Date filter: ${filterState.dateRange} (cutoff: ${new Date(filterTime).toLocaleDateString()})`);
 
             let totalTasksChecked = 0;
             let tasksMatched = 0;
@@ -2514,10 +2565,10 @@
                 .map(task => filterTaskRecursive(task))
                 .filter(task => task !== null);
             
-            console.log(`📅 Date filter result: ${filteredTasks.length} root items kept (from ${tasks.length} total)`);
-            console.log(`   - Checked ${totalTasksChecked} tasks, ${tasksMatched} matched the date criteria`);
+            debugLog(`📅 Date filter result: ${filteredTasks.length} root items kept (from ${tasks.length} total)`);
+            debugLog(`   - Checked ${totalTasksChecked} tasks, ${tasksMatched} matched the date criteria`);
             if (tasksMatched < totalTasksChecked) {
-                console.log(`   - Filtered out ${totalTasksChecked - tasksMatched} tasks outside date range`);
+                debugLog(`   - Filtered out ${totalTasksChecked - tasksMatched} tasks outside date range`);
             }
             
             return filteredTasks;
@@ -2555,7 +2606,7 @@
                     // If parent exists but parent.parent is undefined (not null, but undefined),
                     // it means parent info wasn't fetched. Re-fetch it.
                     if (parent.parent === undefined) {
-                        console.log(`Parent "${parent.name}" exists but lacks parent info, re-fetching...`);
+                        debugLog(`Parent "${parent.name}" exists but lacks parent info, re-fetching...`);
                         try {
                             const refreshedTask = await fetch(`https://app.asana.com/api/1.0/tasks/${currentParentGid}?opt_fields=name,completed,completed_at,assignee,due_on,modified_at,parent,parent.name,notes,html_notes`, {
                                 headers: { 'Authorization': `Bearer ${personalAccessToken}` }
@@ -2566,7 +2617,7 @@
                                 const taskData = data.data;
                                 // Update the parent field while preserving other data
                                 parent.parent = taskData.parent;
-                                console.log(`Updated parent info for "${parent.name}": ${parent.parent ? parent.parent.name : 'no parent (root)'}`);
+                                debugLog(`Updated parent info for "${parent.name}": ${parent.parent ? parent.parent.name : 'no parent (root)'}`);
                             }
                         } catch (error) {
                             console.warn(`Could not refresh parent info for ${currentParentGid}:`, error);
@@ -2588,7 +2639,7 @@
                         parentTask.subtasksLoaded = false;
                         
                         allTasksMap.set(parentTask.gid, parentTask);
-                        console.log(`Fetched missing ancestor: "${parentTask.name}" (${parentTask.gid})`);
+                        debugLog(`Fetched missing ancestor: "${parentTask.name}" (${parentTask.gid})`);
                         
                         // Continue up the chain
                         currentParentGid = parentTask.parent ? parentTask.parent.gid : null;
@@ -2750,6 +2801,10 @@
             // Apply completion status filter
             tasksToDisplay = filterTasksByCompletion(tasksToDisplay);
 
+            // Collapse single-child chains after filtering
+            // (filtering may have removed children, creating new single-child chains)
+            tasksToDisplay = collapseSingleChildChainsInArray(tasksToDisplay);
+
             // Apply sorting
             tasksToDisplay = sortTasks(tasksToDisplay);
 
@@ -2782,16 +2837,16 @@
         }
 
         function filterTasksByCompletion(tasks) {
-            console.log('filterTasksByCompletion called with', tasks.length, 'tasks');
-            console.log('Completion filter mode:', filterState.completion);
+            debugLog('filterTasksByCompletion called with', tasks.length, 'tasks');
+            debugLog('Completion filter mode:', filterState.completion);
             
             if (filterState.completion === 'both') {
-                console.log('Filter mode is "both" - returning all tasks');
+                debugLog('Filter mode is "both" - returning all tasks');
                 return tasks;
             }
 
             const showCompleted = filterState.completion === 'completed';
-            console.log('Show completed:', showCompleted);
+            debugLog('Show completed:', showCompleted);
 
             // Collect all matching tasks from the entire tree
             const matchingTasks = [];
@@ -2829,7 +2884,7 @@
             // Use collapsedParentChain if it exists to maintain proper parent chain context
             tasks.forEach(task => collectMatching(task, task.collapsedParentChain || []));
             
-            console.log('Found', matchingTasks.length, 'matching tasks');
+            debugLog('Found', matchingTasks.length, 'matching tasks');
             
             // Group tasks by common parent chain prefixes
             function findCommonPrefixLength(chain1, chain2) {
@@ -2894,7 +2949,7 @@
             
             const { groups, ungrouped } = groupByCommonPrefix();
             
-            console.log('Grouped:', groups.length, 'groups, Ungrouped:', ungrouped.length, 'tasks');
+            debugLog('Grouped:', groups.length, 'groups, Ungrouped:', ungrouped.length, 'tasks');
             
             // Now build the result hierarchy
             // Tasks with no parents or all parents matching stay in hierarchy
@@ -3110,8 +3165,8 @@
             
             const result = buildFilteredHierarchy();
             
-            console.log('After filtering:', result.length, 'tasks remain');
-            console.log('Sample tasks:', result.slice(0, 3).map(t => ({name: t.name, completed: t.completed})));
+            debugLog('After filtering:', result.length, 'tasks remain');
+            debugLog('Sample tasks:', result.slice(0, 3).map(t => ({name: t.name, completed: t.completed})));
             
             return result;
         }
@@ -4982,7 +5037,7 @@
                 
                 if (cacheResult) {
                     // Cache encompasses requested scope - use it!
-                    console.log(`✅ Using cached data (scope: ${cacheResult.broadestScope} encompasses ${filterState.dateRange})`);
+                    debugLog(`✅ Using cached data (scope: ${cacheResult.broadestScope} encompasses ${filterState.dateRange})`);
                     displayCachedData();
                     showToast('Filter applied (using cached data)', 'success', 2000);
                     
@@ -4991,7 +5046,7 @@
                     setTimeout(() => refreshData(true, lastFetch), 1000);
                 } else {
                     // Cache doesn't encompass requested scope - need to fetch
-                    console.log(`❌ Cache miss or narrower scope - fetching data for ${filterState.dateRange}`);
+                    debugLog(`❌ Cache miss or narrower scope - fetching data for ${filterState.dateRange}`);
                     showProgress();
                     updateProgress(0, 100, 'Loading tasks...');
                     await loadUserTasks(false);
@@ -4999,7 +5054,7 @@
             } else {
                 // Only completion or parent filter changed - re-display existing data (instant!)
                 if (completionChanged) {
-                    console.log('✨ Completion filter changed - applying client-side filter (instant)');
+                    debugLog('✨ Completion filter changed - applying client-side filter (instant)');
                 }
                 displayTasks();
                 showToast('Filter applied', 'success', 1000);
@@ -5055,34 +5110,34 @@
                     label: labels[filterState.dateRange],
                     onDelete: async () => {
                         const oldDateRange = filterState.dateRange;
-                        console.log(`🗑️ Date filter chip deleted. Old: ${oldDateRange}, New: all`);
-                        console.log(`   Before: filterState.dateRange = ${filterState.dateRange}`);
+                        debugLog(`🗑️ Date filter chip deleted. Old: ${oldDateRange}, New: all`);
+                        debugLog(`   Before: filterState.dateRange = ${filterState.dateRange}`);
                         
                         filterState.dateRange = 'all';
                         filterState.customStart = null;
                         filterState.customEnd = null;
                         saveFilterState();
                         
-                        console.log(`   After: filterState.dateRange = ${filterState.dateRange}`);
-                        console.log(`   rootItems.length = ${rootItems.length}`);
-                        console.log(`   allTasksMap.size = ${allTasksMap.size}`);
+                        debugLog(`   After: filterState.dateRange = ${filterState.dateRange}`);
+                        debugLog(`   rootItems.length = ${rootItems.length}`);
+                        debugLog(`   allTasksMap.size = ${allTasksMap.size}`);
                         
                         // Check if cache already has all tasks
                         const cached = loadCache();
-                        console.log(`   Cache check: broadestScope = ${cached?.broadestScope}`);
+                        debugLog(`   Cache check: broadestScope = ${cached?.broadestScope}`);
                         
                         if (cached && cached.broadestScope === 'all') {
                             // Cache encompasses 'all' scope - just filter client-side
-                            console.log(`✨ Switching from ${oldDateRange} to 'all' - using cached data (no API call)`);
-                            console.log(`   Calling displayTasks()...`);
+                            debugLog(`✨ Switching from ${oldDateRange} to 'all' - using cached data (no API call)`);
+                            debugLog(`   Calling displayTasks()...`);
                             showToast('Date filter removed (using cached data)', 'success', 2000);
                             displayTasks();
-                            console.log(`   displayTasks() completed`);
+                            debugLog(`   displayTasks() completed`);
                             displayFilterBadges();
-                            console.log(`   displayFilterBadges() completed`);
+                            debugLog(`   displayFilterBadges() completed`);
                         } else {
                             // Need to fetch all tasks
-                            console.log(`   Cache doesn't have 'all' scope - need to reload`);
+                            debugLog(`   Cache doesn't have 'all' scope - need to reload`);
                             showToast('Reloading to fetch all tasks...', 'info', 2000);
                             await loadUserTasks();
                             displayFilterBadges();
@@ -5285,6 +5340,15 @@
                 personalAccessToken = savedToken;
                 WORKSPACE_ID = savedWorkspaceId; // May be null, will be fetched during auth if needed
                 authenticateAndLoad();
+            }
+            
+            // Show Clear Cache button if ?debug URL parameter is present
+            const urlParams = new URLSearchParams(window.location.search);
+            if (urlParams.has('debug')) {
+                const clearCacheBtn = document.getElementById('clearCacheBtn');
+                if (clearCacheBtn) {
+                    clearCacheBtn.style.display = '';
+                }
             }
         };
     </script>
