@@ -198,6 +198,74 @@
             background: #bbb;
             color: #000;
         }
+        /* Sort Buttons Row */
+        .sort-buttons-row {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            width: 100%;
+            margin-top: 10px;
+        }
+        .sort-toggle-btn {
+            padding: 6px 12px;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            background: white;
+            cursor: pointer;
+            font-size: 0.9em;
+            transition: all 0.2s ease;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            user-select: none;
+            position: relative;
+        }
+        .sort-toggle-btn:hover {
+            background: #f8f9fa;
+            border-color: #2c7873;
+        }
+        /* Sort states */
+        .sort-toggle-btn.sort-neutral {
+            background: white;
+            color: #666;
+        }
+        .sort-toggle-btn.sort-asc {
+            background: #e8f4f3;
+            color: #2c7873;
+            border-color: #2c7873;
+        }
+        .sort-toggle-btn.sort-desc {
+            background: #e8f4f3;
+            color: #2c7873;
+            border-color: #2c7873;
+        }
+        /* Sort indicator icons */
+        .sort-indicator {
+            font-size: 1.1em;
+            line-height: 1;
+            display: inline-block;
+            width: 1em;
+            text-align: center;
+        }
+        /* Sort priority subscript */
+        .sort-priority {
+            font-size: 0.7em;
+            vertical-align: sub;
+            font-weight: bold;
+            color: #e67e22;
+            margin-left: 2px;
+        }
+        /* Compact mode adjustments for sort buttons */
+        .controls.compact .sort-buttons-row {
+            margin-top: 5px;
+        }
+        .controls.compact .sort-toggle-btn {
+            padding: 4px 8px;
+            font-size: 0.85em;
+        }
+        .controls.compact .sort-toggle-btn .btn-text {
+            display: none;
+        }
         .summary {
             padding: 20px 30px;
             background: #e9ecef;
@@ -738,13 +806,7 @@
                 <div class="controls-left">
                     <img src="TaskRaptor.png" alt="TaskRaptor" class="controls-logo">
                     <button onclick="showInfoModal()" title="Info"><span class="btn-icon">ℹ️</span><span class="btn-text"> Info</span></button>
-                    <select id="sortSelect" onchange="applySorting()">
-                        <option value="name">Sort by Name</option>
-                        <option value="due_date">Sort by Due Date</option>
-                        <option value="completed">Sort by Status</option>
-                        <option value="modified">Sort by Last Modified</option>
-                    </select>
-                    <button onclick="showFilterModal()" title="Filters"><span class="btn-icon">🔍</span><span class="btn-text"> Filters</span></button>
+                    <button onclick="showFilterModal()" title="Filter & Sort"><span class="btn-icon">🔍</span><span class="btn-text"> Filter & Sort</span></button>
                     <div id="filterBadges"></div>
                 </div>
                 <div class="controls-right">
@@ -778,22 +840,22 @@
     <!-- Filter Modal -->
     <div id="filterModal" class="modal">
         <div class="modal-content">
-            <h2>Filter Tasks</h2>
+            <h2>Filter & Sort</h2>
             
             <div class="form-group">
                 <label>Completion Status</label>
                 <div class="radio-group">
                     <label>
-                        <input type="radio" name="completionFilter" value="uncompleted" checked>
-                        Incomplete Only
+                        <input type="radio" name="completionFilter" value="incomplete" checked>
+                        Incomplete
                     </label>
                     <label>
                         <input type="radio" name="completionFilter" value="completed">
-                        Completed Only
+                        Completed
                     </label>
                     <label>
                         <input type="radio" name="completionFilter" value="both">
-                        Both
+                        All
                     </label>
                 </div>
             </div>
@@ -823,6 +885,32 @@
                 </select>
             </div>
 
+            <div class="form-group">
+                <label>Sort By</label>
+                <div class="sort-buttons-row">
+                    <button class="sort-toggle-btn sort-neutral" data-sort-field="modified" data-sort-order="none" data-sort-priority="0" onclick="handleSortButtonClick(event, 'modified')" title="Sort by Last Modified">
+                        <span class="sort-indicator">⇅</span>
+                        <span class="btn-text">Modified</span>
+                        <span class="sort-priority" style="display:none;"></span>
+                    </button>
+                    <button class="sort-toggle-btn sort-neutral" data-sort-field="due_date" data-sort-order="none" data-sort-priority="0" onclick="handleSortButtonClick(event, 'due_date')" title="Sort by Due Date">
+                        <span class="sort-indicator">⇅</span>
+                        <span class="btn-text">Due</span>
+                        <span class="sort-priority" style="display:none;"></span>
+                    </button>
+                    <button class="sort-toggle-btn sort-neutral" data-sort-field="completed" data-sort-order="none" data-sort-priority="0" onclick="handleSortButtonClick(event, 'completed')" title="Sort by Status">
+                        <span class="sort-indicator">⇅</span>
+                        <span class="btn-text">Status</span>
+                        <span class="sort-priority" style="display:none;"></span>
+                    </button>
+                    <button class="sort-toggle-btn sort-neutral" data-sort-field="name" data-sort-order="none" data-sort-priority="0" onclick="handleSortButtonClick(event, 'name')" title="Sort by Name">
+                        <span class="sort-indicator">⇅</span>
+                        <span class="btn-text">Name</span>
+                        <span class="sort-priority" style="display:none;"></span>
+                    </button>
+                </div>
+            </div>
+
             <div class="modal-actions">
                 <button class="btn-secondary" onclick="closeFilterModal()">Cancel</button>
                 <button class="btn-primary" onclick="applyFilters()">Apply Filters</button>
@@ -845,7 +933,7 @@
         
         // Filter state
         let filterState = {
-            completion: 'uncompleted',
+            completion: 'incomplete',
             dateRange: 'last30',
             customStart: null,
             customEnd: null,
@@ -857,6 +945,11 @@
             const saved = localStorage.getItem('taskraptor_filters');
             if (saved) {
                 filterState = JSON.parse(saved);
+                // Migration: Convert old 'uncompleted' value to 'incomplete'
+                if (filterState.completion === 'uncompleted') {
+                    filterState.completion = 'incomplete';
+                    saveFilterState(); // Save the migrated value
+                }
                 console.log('Loaded filter state from localStorage:', filterState);
             } else {
                 console.log('No saved filter state, using defaults:', filterState);
@@ -891,6 +984,172 @@
             const saved = localStorage.getItem('taskraptor_expand_states');
             if (saved) {
                 expandStates = JSON.parse(saved);
+            }
+        }
+
+        // Sort state management
+        let sortState = {
+            columns: {}, // Map of field -> {order: 'none'|'asc'|'desc', priority: 0-4}
+            nextPriority: 1
+        };
+
+        function initializeSortButtons() {
+            const fields = ['modified', 'due_date', 'completed', 'name'];
+            fields.forEach(field => {
+                sortState.columns[field] = { order: 'none', priority: 0 };
+            });
+            loadSortState();
+        }
+
+        function saveSortState() {
+            try {
+                localStorage.setItem('taskraptor_sort_state', JSON.stringify(sortState));
+            } catch (error) {
+                console.error('Failed to save sort state:', error);
+                if (error.name === 'QuotaExceededError') {
+                    showToast('Storage full: Unable to save sort preferences', 'error');
+                }
+            }
+        }
+
+        function loadSortState() {
+            const saved = localStorage.getItem('taskraptor_sort_state');
+            if (saved) {
+                const loaded = JSON.parse(saved);
+                sortState = loaded;
+                // Restore button UI from saved state
+                Object.keys(sortState.columns).forEach(field => {
+                    updateSortButtonUI(field);
+                });
+            }
+        }
+
+        // Helper function to convert number to Unicode subscript
+        function toSubscript(num) {
+            const subscripts = ['₀', '₁', '₂', '₃', '₄', '₅', '₆', '₇', '₈', '₉'];
+            return String(num).split('').map(digit => subscripts[parseInt(digit)]).join('');
+        }
+
+        function handleSortButtonClick(event, field) {
+            event.preventDefault();
+            event.stopPropagation();
+            
+            const isMultiSort = event.ctrlKey || event.shiftKey;
+            const currentState = sortState.columns[field];
+            
+            // Cycle through states: none -> asc -> desc -> none
+            let newOrder;
+            if (currentState.order === 'none') {
+                newOrder = 'asc';
+            } else if (currentState.order === 'asc') {
+                newOrder = 'desc';
+            } else {
+                newOrder = 'none';
+            }
+            
+            // If not multi-sort, reset all other buttons to neutral
+            if (!isMultiSort) {
+                Object.keys(sortState.columns).forEach(f => {
+                    if (f !== field) {
+                        sortState.columns[f] = { order: 'none', priority: 0 };
+                        updateSortButtonUI(f);
+                    }
+                });
+                sortState.nextPriority = 1;
+            }
+            
+            // Update this button's state
+            if (newOrder === 'none') {
+                sortState.columns[field] = { order: 'none', priority: 0 };
+            } else {
+                // Assign priority if needed
+                if (currentState.priority === 0) {
+                    sortState.columns[field] = { order: newOrder, priority: sortState.nextPriority };
+                    sortState.nextPriority++;
+                } else {
+                    sortState.columns[field].order = newOrder;
+                }
+            }
+            
+            // Renumber priorities if needed (remove gaps)
+            if (!isMultiSort || newOrder === 'none') {
+                renumberPriorities();
+            }
+            
+            // Update ALL button UIs to ensure priority numbers show/hide correctly
+            // when active sort count changes (e.g., adding second sort should show "1" on first button)
+            Object.keys(sortState.columns).forEach(f => {
+                updateSortButtonUI(f);
+            });
+            
+            saveSortState();
+            displayTasks();
+            displayFilterBadges();
+        }
+
+        function renumberPriorities() {
+            // Get all active sorts sorted by current priority
+            const activeSorts = Object.entries(sortState.columns)
+                .filter(([_, state]) => state.order !== 'none')
+                .sort((a, b) => a[1].priority - b[1].priority);
+            
+            // Renumber them sequentially
+            activeSorts.forEach(([field, _], index) => {
+                sortState.columns[field].priority = index + 1;
+            });
+            
+            sortState.nextPriority = activeSorts.length + 1;
+        }
+
+        function removeSortDimension(field) {
+            // Remove this sort dimension
+            sortState.columns[field] = { order: 'none', priority: 0 };
+            
+            // Renumber remaining priorities
+            renumberPriorities();
+            
+            // Update all button UIs
+            Object.keys(sortState.columns).forEach(f => {
+                updateSortButtonUI(f);
+            });
+            
+            saveSortState();
+            displayTasks();
+            displayFilterBadges();
+        }
+
+        function updateSortButtonUI(field) {
+            const button = document.querySelector(`button[data-sort-field="${field}"]`);
+            if (!button) return;
+            
+            const state = sortState.columns[field];
+            const indicator = button.querySelector('.sort-indicator');
+            const prioritySpan = button.querySelector('.sort-priority');
+            
+            // Remove all state classes
+            button.classList.remove('sort-neutral', 'sort-asc', 'sort-desc');
+            
+            // Update indicator and class based on order
+            if (state.order === 'asc') {
+                button.classList.add('sort-asc');
+                indicator.textContent = '↑';
+            } else if (state.order === 'desc') {
+                button.classList.add('sort-desc');
+                indicator.textContent = '↓';
+            } else {
+                button.classList.add('sort-neutral');
+                indicator.textContent = '⇅';
+            }
+            
+            // Count active sorts to determine if we should show priority
+            const activeSortCount = Object.values(sortState.columns).filter(s => s.order !== 'none').length;
+            
+            // Update priority display - only show when multiple sorts are active
+            if (state.priority > 0 && activeSortCount > 1) {
+                prioritySpan.textContent = state.priority;
+                prioritySpan.style.display = 'inline';
+            } else {
+                prioritySpan.style.display = 'none';
             }
         }
 
@@ -1623,17 +1882,17 @@
                 const dateFilter = getDateFilter();
                 
                 if (filterState.completion === 'completed') {
-                    // For completed tasks, use completed_since
-                    apiUrl += '&completed=true';
+                    // For completed tasks, use completed_since (API-supported parameter)
                     if (dateFilter) {
                         apiUrl += `&completed_since=${dateFilter}`;
                     }
-                } else if (filterState.completion === 'uncompleted') {
-                    // For uncompleted tasks, use modified_since to reduce payload
-                    apiUrl += '&completed=false';
-                    if (dateFilter && filterState.dateRange !== 'all') {
-                        apiUrl += `&modified_since=${dateFilter}`;
-                    }
+                    // Note: Without completed_since, API returns ALL tasks, so we need date filter
+                    // We'll filter by completion status client-side
+                } else if (filterState.completion === 'incomplete') {
+                    // For incomplete tasks only: Use completed_since with far-future date
+                    // This exploits the fact that completed_since returns ALL incomplete tasks
+                    // plus completed tasks after the date. A future date means zero completed tasks.
+                    apiUrl += '&completed_since=2099-01-01T00:00:00.000Z';
                 } else {
                     // For 'both' mode, use modified_since if date filter is set
                     if (dateFilter && filterState.dateRange !== 'all') {
@@ -1665,8 +1924,41 @@
 
                 setProgress(35, `Processing ${allTasks.length} tasks...`);
 
-                // Filter by date if needed and initialize structure
-                const filteredTasks = filterTasksByDate(allTasks).map(task => {
+                // Analyze what was fetched
+                const tasksWithParent = allTasks.filter(t => t.parent).length;
+                const tasksWithoutParent = allTasks.filter(t => !t.parent).length;
+                const completedCount = allTasks.filter(t => t.completed).length;
+                const incompleteCount = allTasks.filter(t => !t.completed).length;
+                console.log(`📊 API returned ${allTasks.length} tasks:`);
+                console.log(`   - ${tasksWithoutParent} top-level tasks (no parent)`);
+                console.log(`   - ${tasksWithParent} subtasks (have parent)`);
+                console.log(`   - ${completedCount} completed, ${incompleteCount} incomplete`);
+                console.log(`   - Sample of first 10:`, allTasks.slice(0, 10).map(t => ({
+                    name: t.name,
+                    completed: t.completed,
+                    hasParent: !!t.parent,
+                    parentName: t.parent?.name
+                })));
+
+                // Filter by completion status if needed
+                // (For 'incomplete' mode, API should already filter via completed_since trick,
+                //  but we double-check client-side as a safety net)
+                let tasksAfterCompletionFilter = allTasks;
+                if (filterState.completion === 'completed') {
+                    tasksAfterCompletionFilter = allTasks.filter(t => t.completed);
+                    console.log(`Filtered to completed tasks: ${tasksAfterCompletionFilter.length} tasks`);
+                } else if (filterState.completion === 'incomplete') {
+                    // API should have already filtered, but verify
+                    const beforeFilter = allTasks.length;
+                    tasksAfterCompletionFilter = allTasks.filter(t => !t.completed);
+                    if (beforeFilter !== tasksAfterCompletionFilter.length) {
+                        console.warn(`⚠️ API returned ${beforeFilter - tasksAfterCompletionFilter.length} completed tasks despite completed_since filter!`);
+                    }
+                    console.log(`Incomplete tasks: ${tasksAfterCompletionFilter.length}`);
+                }
+
+                // Then filter by date if needed and initialize structure
+                const filteredTasks = filterTasksByDate(tasksAfterCompletionFilter).map(task => {
                     // Ensure task has required structure
                     if (!task.subtasks) task.subtasks = [];
                     if (task.comments === undefined) task.comments = null;
@@ -2033,12 +2325,12 @@
             // This function only does additional client-side filtering for 'both' mode
             
             if (filterState.dateRange === 'all') return tasks;
-            if (filterState.completion === 'uncompleted' || filterState.completion === 'completed') {
+            if (filterState.completion === 'incomplete' || filterState.completion === 'completed') {
                 // API already filtered these, so return as-is
                 return tasks;
             }
 
-            // For 'both' mode: API filtered by modified_since, but we need to keep all uncompleted
+            // For 'both' mode: API filtered by modified_since, but we need to keep all incomplete
             // and filter completed by completion date
             const dateFilter = getDateFilter();
             if (!dateFilter) return tasks;
@@ -2046,7 +2338,7 @@
             const filterTime = new Date(dateFilter).getTime();
 
             return tasks.filter(task => {
-                if (!task.completed) return true; // Always show uncompleted
+                if (!task.completed) return true; // Always show incomplete
                 // For completed tasks in 'both' mode, check if completed within range
                 if (!task.modified_at) return true;
                 const modifiedTime = new Date(task.modified_at).getTime();
@@ -2223,7 +2515,13 @@
                     const isAssignedToUser = subtask.assignee && subtask.assignee.gid === currentUserId;
                     const isUnassigned = !subtask.assignee;
                     
-                    if (isAssignedToUser || (isUnassigned && parentAssignedToUser)) {
+                    // Check if subtask matches the completion filter
+                    const matchesCompletionFilter = 
+                        filterState.completion === 'both' || 
+                        (filterState.completion === 'completed' && subtask.completed) ||
+                        (filterState.completion === 'incomplete' && !subtask.completed);
+                    
+                    if ((isAssignedToUser || (isUnassigned && parentAssignedToUser)) && matchesCompletionFilter) {
                         // Preserve existing comments and UI state if subtask already exists
                         const existingSubtask = allTasksMap.get(subtask.gid);
                         if (existingSubtask) {
@@ -2250,12 +2548,11 @@
         }
 
         function displayTasks() {
+            // Save current scroll position
+            const scrollY = window.scrollY || window.pageYOffset;
+            const scrollX = window.scrollX || window.pageXOffset;
+            
             const content = document.getElementById('content');
-            content.innerHTML = '';
-
-            console.log('displayTasks called');
-            console.log('Root items before filtering:', rootItems.length);
-            console.log('Filter state:', filterState);
 
             // Apply parent filter
             let tasksToDisplay = rootItems;
@@ -2269,26 +2566,39 @@
                     return isDescendantOf(task.gid, filterState.parentFilter);
                 });
             }
-            console.log('After parent filter:', tasksToDisplay.length);
 
             // Apply completion status filter
             tasksToDisplay = filterTasksByCompletion(tasksToDisplay);
-            console.log('After completion filter:', tasksToDisplay.length);
 
             // Apply sorting
             tasksToDisplay = sortTasks(tasksToDisplay);
 
             if (tasksToDisplay.length === 0) {
-                content.innerHTML = '<div style="text-align: center; padding: 40px; color: #6c757d;">No tasks found with current filters. Check browser console for debug info.</div>';
+                content.innerHTML = '<div style="text-align: center; padding: 40px; color: #6c757d;">No tasks found with current filters.</div>';
+                // Restore scroll immediately
+                window.scrollTo(scrollX, scrollY);
                 return;
             }
-
+            
+            // Build all content in a document fragment first
+            const fragment = document.createDocumentFragment();
             tasksToDisplay.forEach(task => {
                 const taskElement = renderTask(task, 0, true);
-                content.appendChild(taskElement);
+                fragment.appendChild(taskElement);
             });
+            
+            // Replace content all at once
+            content.innerHTML = '';
+            content.appendChild(fragment);
 
             updateSummary(tasksToDisplay);
+            
+            // Defer scroll restoration until after browser finishes layout
+            requestAnimationFrame(() => {
+                requestAnimationFrame(() => {
+                    window.scrollTo(scrollX, scrollY);
+                });
+            });
         }
 
         function filterTasksByCompletion(tasks) {
@@ -2358,37 +2668,63 @@
         }
 
         function sortTasks(tasks) {
-            const sortBy = document.getElementById('sortSelect').value;
-            const sorted = [...tasks];
-
-            switch (sortBy) {
-                case 'name':
-                    sorted.sort((a, b) => a.name.localeCompare(b.name));
-                    break;
-                case 'due_date':
-                    sorted.sort((a, b) => {
-                        if (!a.due_on && !b.due_on) return 0;
-                        if (!a.due_on) return 1;
-                        if (!b.due_on) return -1;
-                        return new Date(a.due_on) - new Date(b.due_on);
-                    });
-                    break;
-                case 'completed':
-                    sorted.sort((a, b) => {
-                        if (a.completed === b.completed) return 0;
-                        return a.completed ? 1 : -1;
-                    });
-                    break;
-                case 'modified':
-                    sorted.sort((a, b) => {
-                        if (!a.modified_at && !b.modified_at) return 0;
-                        if (!a.modified_at) return 1;
-                        if (!b.modified_at) return -1;
-                        return new Date(b.modified_at) - new Date(a.modified_at);
-                    });
-                    break;
+            // Get all active sort columns with their priorities
+            const sortColumns = Object.entries(sortState.columns)
+                .filter(([_, state]) => state.order !== 'none')
+                .sort((a, b) => a[1].priority - b[1].priority)
+                .map(([field, state]) => ({ field, order: state.order }));
+            
+            // If no active sorts, return original order
+            if (sortColumns.length === 0) {
+                return tasks;
             }
-
+            
+            // Create a copy to sort
+            const sorted = [...tasks];
+            
+            sorted.sort((a, b) => {
+                // Try each sort column in priority order
+                for (const column of sortColumns) {
+                    const field = column.field;
+                    const order = column.order;
+                    let comparison = 0;
+                    
+                    switch (field) {
+                        case 'name':
+                            comparison = a.name.localeCompare(b.name);
+                            break;
+                            
+                        case 'due_date':
+                            if (!a.due_on && !b.due_on) comparison = 0;
+                            else if (!a.due_on) comparison = 1;
+                            else if (!b.due_on) comparison = -1;
+                            else comparison = new Date(a.due_on) - new Date(b.due_on);
+                            break;
+                            
+                        case 'completed':
+                            if (a.completed === b.completed) comparison = 0;
+                            else comparison = a.completed ? 1 : -1;
+                            break;
+                            
+                        case 'modified':
+                            if (!a.modified_at && !b.modified_at) comparison = 0;
+                            else if (!a.modified_at) comparison = 1;
+                            else if (!b.modified_at) comparison = -1;
+                            else comparison = new Date(b.modified_at) - new Date(a.modified_at);
+                            break;
+                    }
+                    
+                    // If values are not equal, return sort result
+                    if (comparison !== 0) {
+                        return order === 'asc' ? comparison : -comparison;
+                    }
+                    
+                    // If equal, continue to next column
+                }
+                
+                return 0; // All values were equal
+            });
+            
             return sorted;
         }
 
@@ -4052,13 +4388,7 @@
                         <li>• Remaining: <strong>${info.remainingTasks || 0}</strong></li>
                     </ul>
                     
-                    <p style="margin-top: 20px;"><strong>🔍 Active Filters:</strong></p>
-                    <ul style="list-style: none; padding-left: 20px;">
-                        <li>• Completion: <strong>${info.completionFilter || 'N/A'}</strong></li>
-                        <li>• Date range: <strong>${info.dateFilter || 'N/A'}</strong></li>
-                    </ul>
-                    
-                    <p style="margin-top: 20px;"><strong>🔄 Data Source:</strong></p>
+                    <p style="margin-top: 20px;"><strong> Data Source:</strong></p>
                     <ul style="list-style: none; padding-left: 20px;">
                         <li>• <strong>${info.dataSource || 'Unknown'}</strong></li>
                     </ul>
@@ -4143,8 +4473,8 @@
             // Only show completion chip if not showing all tasks
             if (filterState.completion !== 'both') {
                 const completionLabels = {
-                    'uncompleted': 'Incomplete Only',
-                    'completed': 'Completed Only'
+                    'incomplete': 'Incomplete Tasks',
+                    'completed': 'Completed Tasks'
                 };
                 chips.push({
                     label: completionLabels[filterState.completion],
@@ -4197,6 +4527,35 @@
                     });
                 }
             }
+
+            // Add sort chips for active sorts
+            const activeSorts = Object.entries(sortState.columns)
+                .filter(([_, state]) => state.order !== 'none')
+                .sort((a, b) => a[1].priority - b[1].priority);
+            
+            const sortLabels = {
+                'modified': 'Modified',
+                'due_date': 'Due Date',
+                'completed': 'Status',
+                'name': 'Name'
+            };
+            
+            const orderSymbols = {
+                'asc': '↑',
+                'desc': '↓'
+            };
+            
+            activeSorts.forEach(([field, state]) => {
+                const indicator = orderSymbols[state.order];
+                const dimension = sortLabels[field];
+                const prioritySubscript = activeSorts.length > 1 ? toSubscript(state.priority) : '';
+                chips.push({
+                    label: `${indicator} ${dimension}${prioritySubscript}`,
+                    onDelete: () => {
+                        removeSortDimension(field);
+                    }
+                });
+            });
 
             // Create chip elements
             chips.forEach(chip => {
@@ -4337,6 +4696,7 @@
 
         window.onload = function() {
             loadExpandStates();
+            initializeSortButtons();
             const savedToken = loadPAT();
             const savedWorkspaceId = loadWorkspaceId();
             if (savedToken) {

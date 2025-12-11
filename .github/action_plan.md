@@ -182,11 +182,107 @@ Based on impact, user value, and dependencies, here's the recommended prioritiza
 
 ## **Additional Items from TODO List**
 
-### **Toolbar (Not Yet Prioritized)**
-- [ ] Persist "Sort by" selection across sessions
+### **Toolbar**
+
+#### **13. Replace Sort Dropdown with 3-State Toggle Buttons** 🔵 **IN PROGRESS**
+- **Why**: More intuitive multi-"column" sorting, better visual feedback, more screen real estate
+- **Impact**: High - Major UX improvement for power users
+- **Effort**: High - Complex feature with multiple components
+- **Risk**: Medium - Requires careful state management and testing
+- **TODO Item**: Remove the current sort dropdown and implement a new row of 3-state toggle buttons below the toolbar buttons. Each sort dimension (Modified, Due, Status, Name) gets its own button. All buttons start in the neutral state, meaning that no sorting is applied by default. Clicking a button cycles through: ascending → descending → back to neutral. Single-click (no modifier) cycles the clicked button to the next state and resets the state of all other sort buttons. Ctrl/Shift-click enables multi-"column" sorting with subscript numerals showing sort priority (1, 2, 3...). Visual indicators: ⇅ (neutral), ↑ (ascending), ↓ (descending).
+- **Reference**: [Inara.cz Multi-Column Sort Implementation](https://gist.github.com/JamesDBartlett3/08d7a07523dbf365874b5d51b8ad519d)
+
+**Implementation Plan:**
+
+**Phase 1: CSS Foundation** (30-45 min)
+- Create `.sort-buttons-row` container styles (new row below toolbar buttons)
+- Design `.sort-toggle-btn` base styles (neutral state, no sorting applied by default)
+- Add state-specific classes: `.sort-asc`, `.sort-desc`, `.sort-neutral`
+- Style sort indicator icons (⇅, ↑, ↓)
+- Create `.sort-priority` styles for subscript numerals (0.6em, vertical-align: sub)
+- Handle compact mode: reduce padding, hide button text labels
+- Ensure proper alignment with existing toolbar buttons and chips
+
+**Phase 2: HTML Structure** (15-20 min)
+- Add new `<div class="sort-buttons-row">` inside `.controls-left`
+- Create four button elements: Modified, Due, Status, Name
+- Each button structure:
+  ```html
+  <button class="sort-toggle-btn" data-sort-field="modified" data-sort-order="none" data-sort-priority="0">
+    <span class="sort-indicator">⇅</span>
+    <span class="btn-text">Modified</span>
+    <span class="sort-priority" style="display:none;"></span>
+  </button>
+  ```
+- Remove old `<select id="sortSelect">` element
+
+**Phase 3: JavaScript State Management** (45-60 min)
+- Create `sortState` object tracking:
+  - `columns`: Map of field → {order: 'none'|'asc'|'desc', priority: 0-4}
+  - `nextPriority`: Counter for assigning priorities
+  - Initialize all buttons to neutral state (no sorting applied)
+- Implement `initializeSortButtons()` to set up initial state (all neutral)
+- Create `handleSortButtonClick(event, field)` with:
+  - Detect Ctrl/Shift modifiers
+  - Cycle through states: asc → desc → none (neutral)
+  - Single-click (no modifier): cycle clicked button and reset all other buttons to neutral
+  - Ctrl/Shift-click: cycle clicked button without affecting others (multi-"column" sort)
+  - Update button visual state
+  - Manage priorities (reset others on single-click, increment on multi-sort)
+  - Update subscript numerals showing sort priority
+- Implement `updateSortButtonUI(field)` to sync button appearance
+- Create `resetSortButton(field)` for clearing state back to neutral
+
+**Phase 4: Multi-Column Sort Logic** (60-90 min)
+- Refactor `sortTasks(tasks)` to:
+  - Accept no parameters (read from sortState)
+  - Build array of active sort columns with priorities
+  - Sort by priority order (1, 2, 3...)
+  - Apply comparison for each column in sequence
+  - Fall through to next priority if values equal
+- Handle each sort type:
+  - **modified**: Date comparison (newest first for asc)
+  - **due**: Date comparison (nulls last)
+  - **completed**: Boolean (incomplete first for asc)
+  - **name**: String localeCompare
+- Update `displayTasks()` to call new sortTasks()
+- Remove old `applySorting()` function
+
+**Phase 5: State Persistence** (20-30 min)
+- Create `saveSortState()` to localStorage
+- Create `loadSortState()` on page load
+- Restore button states from saved state
+- Handle legacy sort preferences (migration from dropdown)
+
+**Phase 6: Testing & Refinement** (60-90 min)
+- Test all buttons start in neutral state (no sorting by default)
+- Test single-column sort (all four fields)
+- Test state cycling (asc → desc → neutral)
+- Test single-click behavior (cycles button and resets all others to neutral)
+- Test Ctrl/Shift-click behavior (multi-"column" sort mode, doesn't reset others)
+- Test multi-"column" sort combinations
+- Test subscript priority numbering accuracy (1, 2, 3...)
+- Test visual indicators update correctly (⇅, ↑, ↓)
+- Test state persistence across page reload
+- Test compact mode appearance
+- Test with empty task lists
+- Test with tasks missing sort field values (nulls)
+- Iterate on visual design and behavior
+
+**Total Estimated Time**: 4-6 hours
+
+**Dependencies**: None - standalone feature
+
+**Breaking Changes**: 
+- Removes `<select id="sortSelect">` element
+- Removes `applySorting()` function
+- Refactors `sortTasks()` signature (no parameters)
+- localStorage key changes for sort preferences
+
+#### **Other Toolbar Items (Not Yet Prioritized)**
+- [ ] Persist "Sort by" selection across sessions (✅ Will be included in Phase 5 above)
 - [ ] "Apply Filter Changes" button when deleting filter chips
 - [ ] Replace logout confirmation dialog with modal
-- [ ] Make toolbar floating/docked when scrolling
 
 ### **Text Entry Fields**
 - [x] ~~Fix bullet point indentation bug~~ ✅ **COMPLETED**: Added CSS rules for ul/ol padding-left: 30px and li margin: 5px 0
