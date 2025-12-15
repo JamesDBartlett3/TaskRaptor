@@ -935,6 +935,9 @@
     </div>
 
     <script>
+        // App version - update this with each release to invalidate old caches
+        const APP_VERSION = '2025-12-15-v1';
+        
         // Debug mode: Check for ?debug URL parameter
         const isDebugMode = new URLSearchParams(window.location.search).has('debug');
         
@@ -1202,9 +1205,12 @@
         // Workspace management
         function saveWorkspaceId(workspaceId) {
             try {
+                debugLog('Saving workspace ID:', workspaceId);
                 localStorage.setItem('taskraptor_workspace_id', workspaceId);
+                debugLog('Workspace ID saved successfully');
             } catch (error) {
                 console.error('Failed to save workspace ID:', error);
+                debugLog('❌ Failed to save workspace ID:', error.message);
                 if (error.name === 'QuotaExceededError') {
                     showToast('Storage full: Unable to save workspace selection', 'error');
                 }
@@ -1212,7 +1218,9 @@
         }
 
         function loadWorkspaceId() {
-            return localStorage.getItem('taskraptor_workspace_id');
+            const workspaceId = localStorage.getItem('taskraptor_workspace_id');
+            debugLog('loadWorkspaceId() returning:', workspaceId);
+            return workspaceId;
         }
 
         function clearWorkspaceId() {
@@ -1248,6 +1256,7 @@
                 // Create unified cache entry with metadata
                 // Cache contains ALL tasks (completed + incomplete)
                 const cacheData = {
+                    version: APP_VERSION, // Store app version for cache invalidation
                     timestamp: Date.now(),
                     data: data,
                     // Track last fetch time for each filter scope
@@ -1277,6 +1286,13 @@
             if (!cached) return null;
             
             const cacheData = JSON.parse(cached);
+            
+            // Check app version - invalidate cache if versions don't match
+            if (cacheData.version !== APP_VERSION) {
+                debugLog(`❌ Cache version mismatch (cached: ${cacheData.version || 'unknown'}, current: ${APP_VERSION}) - invalidating cache`);
+                localStorage.removeItem('taskraptor_cache');
+                return null;
+            }
             
             // Check if cache is valid (< 24 hours old)
             const ageHours = (Date.now() - cacheData.timestamp) / (1000 * 60 * 60);
@@ -1624,17 +1640,53 @@
                     WORKSPACE_ID = workspaces[0].gid;
                     saveWorkspaceId(WORKSPACE_ID);
                     debugLog(`Auto-selected workspace: ${workspaces[0].name} (${WORKSPACE_ID})`);
+                    debugLog(`Workspace is_organization: ${workspaces[0].is_organization}`);
                 } else {
                     // Multiple workspaces, show selector
                     debugLog('Multiple workspaces available, showing selector...');
                     await showWorkspaceSelector(workspaces);
                 }
+                
+                // Validate workspace access by checking user membership
+                await validateWorkspaceAccess();
 
             } catch (error) {
                 throw new Error('Workspace selection failed: ' + error.message);
             }
         }
 
+        async function validateWorkspaceAccess() {
+            try {
+                debugLog('Validating workspace access...');
+                // Try to fetch user's task count in this workspace as a validation
+                const testUrl = `https://app.asana.com/api/1.0/tasks?assignee=${currentUserId}&workspace=${WORKSPACE_ID}&limit=1&opt_fields=gid`;
+                const response = await fetch(testUrl, {
+                    headers: { 'Authorization': `Bearer ${personalAccessToken}` }
+                });
+                
+                if (!response.ok) {
+                    const errorText = await response.text().catch(() => '');
+                    debugLog(`❌ Workspace validation failed: HTTP ${response.status}`, errorText);
+                    
+                    if (response.status === 400) {
+                        throw new Error(`Cannot access workspace. You may not be a member of this workspace, or your Personal Access Token may not have the required permissions.`);
+                    } else if (response.status === 403) {
+                        throw new Error(`Access denied to workspace. Please check your Personal Access Token has 'tasks:read' permission.`);
+                    } else {
+                        throw new Error(`Failed to validate workspace access (HTTP ${response.status})`);
+                    }
+                }
+                
+                const data = await response.json();
+                debugLog('✓ Workspace access validated successfully');
+                debugLog(`  User has access to tasks in workspace ${WORKSPACE_ID}`);
+            } catch (error) {
+                debugLog('❌ Workspace validation error:', error.message);
+                clearWorkspaceId();
+                throw error;
+            }
+        }
+        
         async function showWorkspaceSelector(workspaces) {
             return new Promise((resolve) => {
                 const modal = document.createElement('div');
@@ -2016,9 +2068,17 @@
 
         // Fetch all tasks with pagination
         async function loadUserTasks(background = false, cacheTimestamp = null) {
-            debugLog('🚀 loadUserTasks STARTING - Code version: 2025-12-09-v2');
+            debugLog('🚀 loadUserTasks STARTING - App version:', APP_VERSION);
             debugLog('Background mode:', background, '| Cache timestamp:', cacheTimestamp ? new Date(cacheTimestamp).toISOString() : 'none');
             try {
+                // Validate that we have a workspace ID before proceeding
+                if (!WORKSPACE_ID) {
+                    debugLog('❌ ERROR: WORKSPACE_ID is not set');
+                    throw new Error('Workspace ID is not set. Please log out and log in again to select a workspace.');
+                }
+                
+                debugLog('Using workspace ID:', WORKSPACE_ID);
+                
                 if (!background) showProgress();
                 
                 let currentProgress = 0;
@@ -2049,14 +2109,68 @@
                 const allTasks = [];
                 let offset = null;
                 let pageCount = 0;
+                let useMinimalParams = false; // Flag to track if we should use minimal parameters
 
                 do {
-                    const url = offset ? `${apiUrl}&offset=${offset}` : apiUrl;
-                    const response = await fetch(url, {
+                    let url = offset ? `${apiUrl}&offset=${offset}` : apiUrl;
+                    debugLog('Fetching:', url.substring(0, 150) + '...');
+                    
+                    let response = await fetch(url, {
                         headers: { 'Authorization': `Bearer ${personalAccessToken}` }
                     });
 
-                    if (!response.ok) throw new Error('Failed to fetch tasks');
+                    // If we get a 400 error and haven't tried minimal params yet, retry with minimal params
+                    if (!response.ok && response.status === 400 && !useMinimalParams) {
+                        debugLog('⚠️ Got 400 error with full parameters, retrying with minimal parameters...');
+                        
+                        // Build minimal URL with just assignee and workspace
+                        const minimalBaseUrl = `https://app.asana.com/api/1.0/tasks?assignee=${currentUserId}&workspace=${WORKSPACE_ID}`;
+                        
+                        // Add modified_since if this is a background update
+                        let minimalApiUrl = minimalBaseUrl;
+                        if (background && cacheTimestamp) {
+                            const modifiedSince = new Date(cacheTimestamp).toISOString();
+                            minimalApiUrl += `&modified_since=${modifiedSince}`;
+                        }
+                        
+                        // Rebuild URL with minimal params
+                        url = offset ? `${minimalApiUrl}&offset=${offset}` : minimalApiUrl;
+                        debugLog('Retry URL:', url.substring(0, 150) + '...');
+                        
+                        // Retry the request
+                        response = await fetch(url, {
+                            headers: { 'Authorization': `Bearer ${personalAccessToken}` }
+                        });
+                        
+                        if (response.ok) {
+                            debugLog('✓ Minimal parameters worked! Continuing with minimal params.');
+                            useMinimalParams = true;
+                            // Update apiUrl for subsequent pages
+                            apiUrl = minimalApiUrl;
+                        }
+                    }
+
+                    if (!response.ok) {
+                        const errorText = await response.text().catch(() => 'Unable to read error response');
+                        debugLog('❌ API Error:', response.status, response.statusText);
+                        debugLog('Error response body:', errorText);
+                        debugLog('Request URL:', url);
+                        debugLog('User ID:', currentUserId);
+                        debugLog('Workspace ID:', WORKSPACE_ID);
+                        
+                        let errorMessage = `Failed to fetch tasks (HTTP ${response.status}): ${response.statusText}.`;
+                        
+                        if (response.status === 400) {
+                            errorMessage += ' This usually means invalid parameters or you are not a member of the selected workspace.';
+                        } else if (response.status === 403) {
+                            errorMessage += ' Access denied. Check your Personal Access Token permissions.';
+                        } else if (response.status === 401) {
+                            errorMessage += ' Authentication failed. Your Personal Access Token may be invalid or expired.';
+                        }
+                        
+                        errorMessage += ' Check console for details.';
+                        throw new Error(errorMessage);
+                    }
 
                     const data = await response.json();
                     allTasks.push(...data.data);
@@ -2067,6 +2181,12 @@
 
                     offset = data.next_page ? data.next_page.offset : null;
                 } while (offset);
+                
+                // If we had to use minimal parameters, warn the user
+                if (useMinimalParams) {
+                    showToast('⚠️ Using minimal API parameters due to compatibility issue. Some task details may be missing.', 'warning', 5000);
+                    debugLog('⚠️ Fetched with minimal parameters - tasks may be missing some fields (notes, memberships, etc.)');
+                }
 
                 setProgress(35, `Processing ${allTasks.length} tasks...`);
 
@@ -2099,6 +2219,15 @@
                     if (!task.subtasks) task.subtasks = [];
                     if (task.comments === undefined) task.comments = null;
                     task.subtasksLoaded = false; // Mark as not loaded yet
+                    
+                    // If using minimal params, some fields may be missing - set defaults
+                    if (useMinimalParams) {
+                        if (!task.notes) task.notes = '';
+                        if (!task.html_notes) task.html_notes = '';
+                        if (!task.memberships) task.memberships = [];
+                        if (!task.modified_at) task.modified_at = new Date().toISOString();
+                    }
+                    
                     return task;
                 });
                 debugLog(`Prepared ${tasksToCache.length} unfiltered tasks for caching`);
