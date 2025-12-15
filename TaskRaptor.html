@@ -26,6 +26,9 @@
             padding: 20px;
             min-width: 550px;
         }
+        body.debug-mode {
+            background: linear-gradient(135deg, #c0392b 0%, #8e2a1f 100%);
+        }
         .container {
             max-width: 1400px;
             margin: 0 auto;
@@ -60,6 +63,14 @@
         .header p {
             opacity: 0.9;
             font-size: 1.1em;
+        }
+        .debug-indicator {
+            display: none;
+            color: #ff4444;
+            font-weight: bold;
+            font-size: 1.2em;
+            margin: 5px 0;
+            text-shadow: 0 0 10px rgba(255, 68, 68, 0.5);
         }
         .auth-section {
             padding: 40px;
@@ -788,6 +799,7 @@
             <img src="TaskRaptor.png" alt="TaskRaptor Logo" class="header-logo">
             <div class="header-content">
                 <h1>TaskRaptor</h1>
+                <p id="debugIndicator" class="debug-indicator">DEBUG MODE: ON</p>
                 <p>View and manage your assigned tasks from Asana with filtering, sorting, and caching</p>
             </div>
             <img src="TaskRaptor.png" alt="TaskRaptor Logo" class="header-logo">
@@ -5365,6 +5377,13 @@
                 const clearCacheBtn = document.getElementById('clearCacheBtn');
                 if (clearCacheBtn) {
                     clearCacheBtn.style.display = '';
+                }
+                // Apply debug mode background color
+                document.body.classList.add('debug-mode');
+                // Show debug mode indicator in header
+                const debugIndicator = document.getElementById('debugIndicator');
+                if (debugIndicator) {
+                    debugIndicator.style.display = 'block';
                 }
             }
         };
