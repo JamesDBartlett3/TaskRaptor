@@ -2091,7 +2091,8 @@
 
                 // Build API URL with filters
                 // Include memberships to get project/section hierarchy
-                let apiUrl = `https://app.asana.com/api/1.0/tasks?assignee=${currentUserId}&workspace=${WORKSPACE_ID}&opt_fields=name,completed,completed_at,assignee,due_on,modified_at,parent,parent.name,notes,html_notes,memberships,memberships.project,memberships.project.name,memberships.section,memberships.section.name`;
+                // Add explicit limit parameter for large result sets
+                let apiUrl = `https://app.asana.com/api/1.0/tasks?assignee=${currentUserId}&workspace=${WORKSPACE_ID}&limit=100&opt_fields=name,completed,completed_at,assignee,due_on,modified_at,parent,parent.name,notes,html_notes,memberships,memberships.project,memberships.project.name,memberships.section,memberships.section.name`;
                 
                 // For incremental updates, only fetch tasks modified since last fetch for this scope
                 // Skip completion filters to catch ALL status changes (incomplete→complete, complete→incomplete)
@@ -2123,8 +2124,8 @@
                     if (!response.ok && response.status === 400 && !useMinimalParams) {
                         debugLog('⚠️ Got 400 error with full parameters, retrying with minimal parameters...');
                         
-                        // Build minimal URL with just assignee and workspace
-                        const minimalBaseUrl = `https://app.asana.com/api/1.0/tasks?assignee=${currentUserId}&workspace=${WORKSPACE_ID}`;
+                        // Build minimal URL with just assignee, workspace, and explicit limit
+                        const minimalBaseUrl = `https://app.asana.com/api/1.0/tasks?assignee=${currentUserId}&workspace=${WORKSPACE_ID}&limit=100`;
                         
                         // Add modified_since if this is a background update
                         let minimalApiUrl = minimalBaseUrl;
