@@ -71,6 +71,30 @@
             font-size: 1.2em;
             margin: 5px 0;
             text-shadow: 0 0 10px rgba(255, 68, 68, 0.5);
+            text-decoration: none;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+        .debug-indicator:hover {
+            color: #ff6666;
+            text-shadow: 0 0 15px rgba(255, 68, 68, 0.8);
+            text-decoration: underline;
+        }
+        .enter-debug-mode {
+            display: none;
+            color: #ff8844;
+            font-weight: bold;
+            font-size: 1em;
+            margin: 5px 0;
+            text-shadow: 0 0 10px rgba(255, 136, 68, 0.5);
+            text-decoration: none;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+        .enter-debug-mode:hover {
+            color: #ffaa66;
+            text-shadow: 0 0 15px rgba(255, 136, 68, 0.8);
+            text-decoration: underline;
         }
         .auth-section {
             padding: 40px;
@@ -799,7 +823,8 @@
             <img src="TaskRaptor.png" alt="TaskRaptor Logo" class="header-logo">
             <div class="header-content">
                 <h1>TaskRaptor</h1>
-                <p id="debugIndicator" class="debug-indicator">DEBUG MODE: ON</p>
+                <a id="debugIndicator" class="debug-indicator" href="#" onclick="exitDebugMode(); return false;" title="Click to exit debug mode">DEBUG MODE: ON (Click to Exit)</a>
+                <a id="enterDebugMode" class="enter-debug-mode" href="#" onclick="enterDebugMode(); return false;" title="Enable debug mode">🔍 Click here to enter Debug Mode</a>
                 <p>View and manage your assigned tasks from Asana with filtering, sorting, and caching</p>
             </div>
             <img src="TaskRaptor.png" alt="TaskRaptor Logo" class="header-logo">
@@ -5516,7 +5541,35 @@
                     debugIndicator.style.display = 'block';
                 }
             }
+            
+            // Add ALT key listener to show/hide enter-debug-mode link
+            const enterDebugLink = document.getElementById('enterDebugMode');
+            if (enterDebugLink && !urlParams.has('debug')) {
+                document.addEventListener('keydown', function(e) {
+                    if (e.altKey && !urlParams.has('debug')) {
+                        enterDebugLink.style.display = 'block';
+                    }
+                });
+                
+                document.addEventListener('keyup', function(e) {
+                    if (!e.altKey) {
+                        enterDebugLink.style.display = 'none';
+                    }
+                });
+            }
         };
+        
+        // Function to enter debug mode
+        function enterDebugMode() {
+            const currentUrl = window.location.href.split('?')[0];
+            window.location.href = currentUrl + '?debug';
+        }
+        
+        // Function to exit debug mode
+        function exitDebugMode() {
+            const currentUrl = window.location.href.split('?')[0];
+            window.location.href = currentUrl;
+        }
     </script>
 </body>
 </html>
